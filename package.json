@@ -1,0 +1,19 @@
+{
+  "name": "obsidian-author-today-importer",
+  "version": "0.1.2",
+  "main": "main.js",
+  "type": "module",
+  "scripts": {
+    "build": "rollup -c",
+    "watch": "rollup -c -w"
+  },
+  "devDependencies": {
+    "@types/node": "^22.15.2",
+    "rollup": "^3.0.0",
+    "rollup-plugin-typescript2": "^0.34.0",
+    "typescript": "^5.0.0"
+  },
+  "dependencies": {
+    "obsidian": "latest"
+  }
+}

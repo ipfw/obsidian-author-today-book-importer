@@ -1,0 +1,11 @@
+{
+  "id": "obsidian-author-today-importer",
+  "name": "Author.Today Book Importer",
+  "version": "0.1.2",
+  "minAppVersion": "0.12.0",
+  "description": "Import book details from author.today into Obsidian notes",
+  "author": "@ipfw999",
+  "authorUrl": "",
+  "isDesktopOnly": false,
+  "main": "main.js"
+}
