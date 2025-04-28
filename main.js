@@ -46,7 +46,7 @@ class AuthorTodayImporter extends obsidian.Plugin {
         }).open();
     }
     async importBook(url) {
-        var _a, _b, _c, _d, _e, _f, _g, _h;
+        var _a, _b, _c, _d, _e, _f, _g, _h, _j;
         try {
             // Fetch page HTML via Obsidian API
             const result = await obsidian.requestUrl({ url, method: 'GET' });
@@ -104,9 +104,40 @@ class AuthorTodayImporter extends obsidian.Plugin {
             // Reading status
             let status = '';
             const libBtn = doc.querySelector('library-button');
-            const span = libBtn === null || libBtn === void 0 ? void 0 : libBtn.querySelector('button span');
-            if (span === null || span === void 0 ? void 0 : span.textContent)
-                status = span.textContent.trim().toLowerCase();
+            if (libBtn) {
+                // First, try button span text
+                const spanText = (_j = libBtn.querySelector('button span')) === null || _j === void 0 ? void 0 : _j.textContent.trim();
+                if (spanText) {
+                    status = spanText.toLowerCase();
+                }
+                else if (libBtn.hasAttribute('params')) {
+                    // Fallback: parse state from params attribute
+                    try {
+                        const paramsStr = libBtn.getAttribute('params');
+                        const paramsJson = paramsStr.replace(/'/g, '"');
+                        const params = JSON.parse(paramsJson);
+                        const state = String(params.state || '').toLowerCase();
+                        switch (state) {
+                            case 'reading':
+                                status = 'читаю';
+                                break;
+                            case 'finished':
+                                status = 'прочитано';
+                                break;
+                            case 'planning':
+                                status = 'отложено';
+                                break;
+                            case 'disliked':
+                                status = 'не интересно';
+                                break;
+                            default:
+                                status = state;
+                                break;
+                        }
+                    }
+                    catch { }
+                }
+            }
             // Download cover locally
             let localCover = '';
             if (cover) {

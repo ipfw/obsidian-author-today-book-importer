@@ -117,8 +117,26 @@ export default class AuthorTodayImporter extends Plugin {
       // Reading status
       let status = '';
       const libBtn = doc.querySelector('library-button');
-      const span = libBtn?.querySelector('button span');
-      if (span?.textContent) status = span.textContent.trim().toLowerCase();
+      if (libBtn) {
+        // Try to read visible label first
+        const spanText = libBtn.querySelector('button span')?.textContent?.trim();
+        if (spanText) {
+          status = spanText.toLowerCase();
+        } else {
+          // Fallback: extract from params attribute via regex
+          const paramsStr = libBtn.getAttribute('params') ?? '';
+          const match = paramsStr.match(/state\s*:\s*'(\w+)'/);
+          if (match) {
+            // Map English state to Russian
+            const st = match[1].toLowerCase();
+            status = st === 'reading' ? 'читаю'
+                   : st === 'finished' ? 'прочитано'
+                   : st === 'planning' ? 'отложено'
+                   : st === 'disliked' ? 'не интересно'
+                   : st;
+          }
+        }
+      }
 
       // Download cover locally
       let localCover = '';
@@ -140,7 +158,8 @@ export default class AuthorTodayImporter extends Plugin {
       const basePath = `${this.settings.notesFolder}/${fileName}`;
       let filePath = `${basePath}.md`;
       let counter = 1;
-      while (await this.app.vault.adapter.exists(filePath)) {
+      // Only add suffix if a file with the same path already exists
+      while (this.app.vault.getAbstractFileByPath(filePath)) {
         filePath = `${basePath}_${counter}.md`;
         counter++;
       }
