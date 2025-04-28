@@ -118,7 +118,7 @@ export default class AuthorTodayImporter extends Plugin {
         const linkEl = cycleLabel.nextElementSibling as HTMLAnchorElement;
         if (linkEl) {
           series = linkEl.textContent.trim();
-        // а за ним <span>&nbsp;#7</span>
+        // а за ним номер в цикле <span>&nbsp;#7</span>
         const numEl = linkEl.nextElementSibling as HTMLElement;
         const m = numEl?.textContent.match(/#(\d+)/);
         if (m) series_number = m[1];
@@ -132,7 +132,18 @@ export default class AuthorTodayImporter extends Plugin {
         const raw = charsSpan.textContent.replace(/\D/g, '');
         const count = parseInt(raw, 10);
         pages = Math.ceil(count / 2000).toString();
-      }      
+      }
+      // === Extract current library status ===
+      let status = '';
+      const libButton = doc.querySelector('library-button');
+      if (libButton) {
+        // внутри кнопки ищем первый <span> — в нём текст статуса
+        const span = libButton.querySelector('button span');
+        if (span?.textContent) {
+          status = span.textContent.trim().toLowerCase(); // например, "читаю"
+        }
+      }
+      // Определяем имя файла
       const fileName = title
         // remove any colons
         .replace(/:/g, '')
@@ -142,7 +153,17 @@ export default class AuthorTodayImporter extends Plugin {
         // replace spaces with underscores
         //.replace(/\s+/g, '_');
       
-      const filePath = `${this.settings.notesFolder}/${fileName}.md`;
+      // Determine unique file path
+      let basePath = `${this.settings.notesFolder}/${fileName}.md`;
+      let targetPath = basePath;
+      let counter = 1;
+      while (this.app.vault.getAbstractFileByPath(targetPath)) {
+        // Insert counter before the extension
+        const suffix = `_${counter}`;
+        const extIndex = basePath.lastIndexOf('.md');
+        targetPath = basePath.slice(0, extIndex) + suffix + '.md';
+        counter++;
+      }
 
       let content = '';
       if (this.settings.templatePath) {
@@ -160,6 +181,7 @@ export default class AuthorTodayImporter extends Plugin {
             .replace(/\{\{series\}\}/g, series)
             .replace(/\{\{series_number\}\}/g, series_number)
             .replace(/\{\{pages\}\}/g, pages)
+            .replace(/\{\{status\}\}/g, status)
             .replace(/\{\{source\}\}/g, url);
           content = tpl;
         } else {
@@ -177,13 +199,16 @@ export default class AuthorTodayImporter extends Plugin {
         series: "[[${series}]]"
         series_number: "${series_number}"
         pages: "${pages}"
+        status: "${status}"
         ---
+
         ### Аннотация
         ${description}`;
         
       }
 
-      await this.app.vault.create(filePath, content);
+      // Create the file at the unique path
+      await this.app.vault.create(targetPath, content);
       new Notice(`Imported "${title}"`);
 
       const file = this.app.vault.getAbstractFileByPath(filePath);
