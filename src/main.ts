@@ -5,8 +5,6 @@ interface ImporterSettings {
   templatePath: string;
 }
 
-// Получаем текущую дату для {{date}}
-const importDate = new Date().toISOString().split('T')[0];
 
 const DEFAULT_SETTINGS: ImporterSettings = {
   notesFolder: 'Books',
@@ -98,7 +96,9 @@ export default class AuthorTodayImporter extends Plugin {
       
       const cover = doc.querySelector('meta[property="og:image"]')?.getAttribute('content') || '';
       const description = doc.querySelector('meta[property="og:description"]')?.getAttribute('content') || '';
-      // … после получения description …
+
+      // Compute import date for {{date}}
+      const importDate = new Date().toISOString().split('T')[0];
 
       // Извлекаем жанры из <div class="book-genres">
       let category = '';
@@ -145,25 +145,21 @@ export default class AuthorTodayImporter extends Plugin {
       }
       // Определяем имя файла
       const fileName = title
-        // remove any colons
         .replace(/:/g, '')
-        // remove any non-letter, non-number, non-space characters
         .replace(/[^\p{L}\p{N}\s]/gu, '')
-        .trim();
-        // replace spaces with underscores
-        //.replace(/\s+/g, '_');
+        .trim()
+        .replace(/\s+/g, '_');
       
       // Determine unique file path
-      let basePath = `${this.settings.notesFolder}/${fileName}.md`;
-      let targetPath = basePath;
+      const basePath = `${this.settings.notesFolder}/${fileName}`;
+      let filePath = `${basePath}.md`;
       let counter = 1;
-      while (this.app.vault.getAbstractFileByPath(targetPath)) {
-        // Insert counter before the extension
-        const suffix = `_${counter}`;
-        const extIndex = basePath.lastIndexOf('.md');
-        targetPath = basePath.slice(0, extIndex) + suffix + '.md';
+      // Use vault.adapter.exists to check for existing files
+      while (await this.app.vault.adapter.exists(filePath)) {
+        filePath = `${basePath}_${counter}.md`;
         counter++;
       }
+
 
       let content = '';
       if (this.settings.templatePath) {
@@ -190,31 +186,29 @@ export default class AuthorTodayImporter extends Plugin {
       }
       if (!content) {
         content = `---
-        title: "${title}"
-        author: "${author}"
-        cover: "${cover}"
-        category: "${category}"
-        publish: "${publishDate}"
-        source: "${url}"
-        series: "[[${series}]]"
-        series_number: "${series_number}"
-        pages: "${pages}"
-        status: "${status}"
-        ---
+title: "${title}"
+author: "${author}"
+cover: "${cover}"
+category: "${category}"
+publishDate: "${publishDate}"
+source: "${url}"
+series: "[[${series}]]"
+series_number: "${series_number}"
+pages: "${pages}"
+status: "${status}"
+date: "${importDate}"
+---
 
-        ### Аннотация
-        ${description}`;
-        
+${description}`;
       }
 
-      // Create the file at the unique path
-      await this.app.vault.create(targetPath, content);
-      new Notice(`Imported "${title}"`);
-
+      // Now create the note
+      await this.app.vault.create(filePath, content);
       const file = this.app.vault.getAbstractFileByPath(filePath);
       if (file instanceof TFile) {
         this.app.workspace.getLeaf(true).openFile(file);
       }
+      new Notice(`Imported "${title}"`);
 
     } catch (e) {
       console.error(e);
