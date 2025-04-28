@@ -2,13 +2,12 @@
 
 var obsidian = require('obsidian');
 
-// Получаем текущую дату для {{date}}
-const importDate = new Date().toISOString().split('T')[0];
 const DEFAULT_SETTINGS = {
     notesFolder: 'Books',
-    templatePath: ''
+    templatePath: '',
+    coverFolder: 'images'
 };
-// Modal to prompt for URL input
+// Modal for entering a URL
 class UrlPromptModal extends obsidian.Modal {
     constructor(app, promptResult) {
         super(app);
@@ -21,20 +20,12 @@ class UrlPromptModal extends obsidian.Modal {
         input.style.width = '100%';
         const submit = contentEl.createEl('button', { text: 'Import' });
         submit.style.marginTop = '10px';
-        submit.onclick = () => {
-            const url = input.value.trim();
-            this.close();
-            this.promptResult(url);
-        };
+        submit.onclick = () => { const url = input.value.trim(); this.close(); this.promptResult(url); };
         input.focus();
-        input.addEventListener('keydown', evt => {
-            if (evt.key === 'Enter')
-                submit.click();
-        });
+        input.addEventListener('keydown', evt => { if (evt.key === 'Enter')
+            submit.click(); });
     }
-    onClose() {
-        this.contentEl.empty();
-    }
+    onClose() { this.contentEl.empty(); }
 }
 class AuthorTodayImporter extends obsidian.Plugin {
     async onload() {
@@ -57,75 +48,90 @@ class AuthorTodayImporter extends obsidian.Plugin {
     async importBook(url) {
         var _a, _b, _c, _d, _e, _f, _g, _h;
         try {
-            const result = await obsidian.requestUrl({ url });
+            // Fetch page HTML via Obsidian API
+            const result = await obsidian.requestUrl({ url, method: 'GET' });
             const html = result.text;
             const parser = new DOMParser();
             const doc = parser.parseFromString(html, 'text/html');
+            // Compute import date for {{date}}
+            const importDate = new Date().toISOString().split('T')[0];
+            // Extract metadata
             let title = ((_b = (_a = doc.querySelector('h1.work-page__title')) === null || _a === void 0 ? void 0 : _a.textContent) === null || _b === void 0 ? void 0 : _b.trim()) || '';
-            if (!title) {
-                const fullTitle = doc.title;
-                title = ((_c = fullTitle.split(' - ')[0]) === null || _c === void 0 ? void 0 : _c.trim()) || 'Unknown Title';
-            }
+            if (!title)
+                title = ((_c = doc.title.split(' - ')[0]) === null || _c === void 0 ? void 0 : _c.trim()) || 'Unknown Title';
             let author = ((_e = (_d = doc.querySelector('.work-page__author a')) === null || _d === void 0 ? void 0 : _d.textContent) === null || _e === void 0 ? void 0 : _e.trim()) || '';
-            if (!author) {
-                const parts = doc.title.split(' - ');
-                author = ((_f = parts[1]) === null || _f === void 0 ? void 0 : _f.trim()) || '';
-            }
-            // Получаем дату публикации из data-time
+            if (!author)
+                author = ((_f = doc.title.split(' - ')[1]) === null || _f === void 0 ? void 0 : _f.trim()) || '';
             let publishDate = '';
             const pubSpan = doc.querySelector('span.hint-top[data-format="calendar-short"]');
-            if (pubSpan) {
-                const dt = pubSpan.getAttribute('data-time');
-                if (dt) {
-                    publishDate = dt.split('T')[0]; // YYYY-MM-DD
-                }
+            if (pubSpan === null || pubSpan === void 0 ? void 0 : pubSpan.getAttribute('data-time')) {
+                publishDate = pubSpan.getAttribute('data-time').split('T')[0];
             }
+            // Sanitize base fileName (remove colons and special characters, keep spaces)
+            const fileName = title
+                .replace(/:/g, '')
+                .replace(/[^\p{L}\p{N}\s]/gu, '')
+                .trim();
             const cover = ((_g = doc.querySelector('meta[property="og:image"]')) === null || _g === void 0 ? void 0 : _g.getAttribute('content')) || '';
             const description = ((_h = doc.querySelector('meta[property="og:description"]')) === null || _h === void 0 ? void 0 : _h.getAttribute('content')) || '';
-            // … после получения description …
-            // Извлекаем жанры из <div class="book-genres">
+            // Genres
             let category = '';
             const genreDiv = doc.querySelector('div.book-genres');
-            if (genreDiv) {
-                // textContent отдаст «Роман / Дорама, Попаданцы, Развитие личности»
+            if (genreDiv)
                 category = genreDiv.textContent.trim();
-            }
-            // === Извлекаем цикл и номер ===
-            let series = '';
-            let series_number = '';
-            // Находим <span class="text-muted">Цикл:</span>
+            // Series and number
+            let series = '', series_number = '';
             const cycleLabel = Array.from(doc.querySelectorAll('span.text-muted'))
                 .find(el => el.textContent.trim().startsWith('Цикл'));
             if (cycleLabel) {
-                // следом идёт <a> с названием цикла
                 const linkEl = cycleLabel.nextElementSibling;
                 if (linkEl) {
                     series = linkEl.textContent.trim();
-                    // а за ним <span>&nbsp;#7</span>
                     const numEl = linkEl.nextElementSibling;
                     const m = numEl === null || numEl === void 0 ? void 0 : numEl.textContent.match(/#(\d+)/);
                     if (m)
                         series_number = m[1];
                 }
             }
-            // === Извлекаем примерный объём страниц ===
+            // Estimated pages
             let pages = '';
             const charsSpan = doc.querySelector('span.hint-top[data-hint^="Размер"]');
             if (charsSpan) {
-                // «390 842 зн.» → «390842»
                 const raw = charsSpan.textContent.replace(/\D/g, '');
                 const count = parseInt(raw, 10);
                 pages = Math.ceil(count / 2000).toString();
             }
-            const fileName = title
-                // remove any colons
-                .replace(/:/g, '')
-                // remove any non-letter, non-number, non-space characters
-                .replace(/[^\p{L}\p{N}\s]/gu, '')
-                .trim();
-            // replace spaces with underscores
-            //.replace(/\s+/g, '_');
-            const filePath = `${this.settings.notesFolder}/${fileName}.md`;
+            // Reading status
+            let status = '';
+            const libBtn = doc.querySelector('library-button');
+            const span = libBtn === null || libBtn === void 0 ? void 0 : libBtn.querySelector('button span');
+            if (span === null || span === void 0 ? void 0 : span.textContent)
+                status = span.textContent.trim().toLowerCase();
+            // Download cover locally
+            let localCover = '';
+            if (cover) {
+                try {
+                    const imgResult = await obsidian.requestUrl({ url: cover, method: 'GET' });
+                    // `arrayBuffer` is already a property, not a function
+                    const buffer = imgResult.arrayBuffer;
+                    const imageName = `${fileName}.jpg`;
+                    const imagePath = `${this.settings.coverFolder}/${imageName}`;
+                    await this.app.vault.createBinary(imagePath, new Uint8Array(buffer));
+                    localCover = imagePath;
+                }
+                catch (e) {
+                    console.warn('Cover download failed', e);
+                }
+            }
+            // Unique file path
+            const basePath = `${this.settings.notesFolder}/${fileName}`;
+            let filePath = `${basePath}.md`;
+            let counter = 1;
+            while (await this.app.vault.adapter.exists(filePath)) {
+                filePath = `${basePath}_${counter}.md`;
+                counter++;
+            }
+            // Build content via template or default
             let content = '';
             if (this.settings.templatePath) {
                 const tplFile = this.app.vault.getAbstractFileByPath(this.settings.templatePath);
@@ -137,11 +143,13 @@ class AuthorTodayImporter extends obsidian.Plugin {
                         .replace(/\{\{author\}\}/g, author)
                         .replace(/\{\{publishDate\}\}/g, publishDate)
                         .replace(/\{\{cover\}\}/g, cover)
+                        .replace(/\{\{localCover\}\}/g, localCover)
                         .replace(/\{\{description\}\}/g, description)
                         .replace(/\{\{category\}\}/g, category)
                         .replace(/\{\{series\}\}/g, series)
                         .replace(/\{\{series_number\}\}/g, series_number)
                         .replace(/\{\{pages\}\}/g, pages)
+                        .replace(/\{\{status\}\}/g, status)
                         .replace(/\{\{source\}\}/g, url);
                     content = tpl;
                 }
@@ -151,25 +159,27 @@ class AuthorTodayImporter extends obsidian.Plugin {
             }
             if (!content) {
                 content = `---
-        title: "${title}"
-        author: "${author}"
-        cover: "${cover}"
-        category: "${category}"
-        publish: "${publishDate}"
-        source: "${url}"
-        series: "[[${series}]]"
-        series_number: "${series_number}"
-        pages: "${pages}"
-        ---
-        ### Аннотация
-        ${description}`;
+cover: "${localCover || cover}"
+localCover: "${localCover}"
+title: "${title}"
+author: "${author}"
+category: "${category}"
+publishDate: "${publishDate}"
+source: "${url}"
+series: "[[${series}]]"
+series_number: ${series_number}
+pages: ${pages}
+status: "${status}"
+date: "${importDate}"
+---
+
+${description}`;
             }
             await this.app.vault.create(filePath, content);
             new obsidian.Notice(`Imported "${title}"`);
-            const file = this.app.vault.getAbstractFileByPath(filePath);
-            if (file instanceof obsidian.TFile) {
-                this.app.workspace.getLeaf(true).openFile(file);
-            }
+            const newFile = this.app.vault.getAbstractFileByPath(filePath);
+            if (newFile instanceof obsidian.TFile)
+                this.app.workspace.getLeaf(true).openFile(newFile);
         }
         catch (e) {
             console.error(e);
@@ -202,6 +212,11 @@ class ImporterSettingTab extends obsidian.PluginSettingTab {
             .setDesc('Relative path to note template')
             .addText(text => text.setPlaceholder('Templates/BookTemplate.md').setValue(this.plugin.settings.templatePath)
             .onChange(async (v) => { this.plugin.settings.templatePath = v; await this.plugin.saveSettings(); }));
+        new obsidian.Setting(containerEl)
+            .setName('Cover Folder')
+            .setDesc('Folder where cover images will be saved')
+            .addText(text => text.setPlaceholder('images').setValue(this.plugin.settings.coverFolder)
+            .onChange(async (v) => { this.plugin.settings.coverFolder = v; await this.plugin.saveSettings(); }));
     }
 }
 

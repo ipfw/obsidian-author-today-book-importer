@@ -3,46 +3,34 @@ import { App, Plugin, PluginSettingTab, Setting, Notice, Modal, TFile, requestUr
 interface ImporterSettings {
   notesFolder: string;
   templatePath: string;
+  coverFolder: string;
 }
-
 
 const DEFAULT_SETTINGS: ImporterSettings = {
   notesFolder: 'Books',
-  templatePath: ''
+  templatePath: '',
+  coverFolder: 'images'
 };
 
-// Modal to prompt for URL input
+// Modal for entering a URL
 class UrlPromptModal extends Modal {
   private promptResult: (value: string) => void;
-
   constructor(app: App, promptResult: (value: string) => void) {
     super(app);
     this.promptResult = promptResult;
   }
-
   onOpen() {
     const { contentEl } = this;
     contentEl.createEl('h2', { text: 'Enter Author.Today book URL' });
     const input = contentEl.createEl('input', { type: 'text' });
     input.style.width = '100%';
-
     const submit = contentEl.createEl('button', { text: 'Import' });
     submit.style.marginTop = '10px';
-    submit.onclick = () => {
-      const url = input.value.trim();
-      this.close();
-      this.promptResult(url);
-    };
-
+    submit.onclick = () => { const url = input.value.trim(); this.close(); this.promptResult(url); };
     input.focus();
-    input.addEventListener('keydown', evt => {
-      if (evt.key === 'Enter') submit.click();
-    });
+    input.addEventListener('keydown', evt => { if (evt.key === 'Enter') submit.click(); });
   }
-
-  onClose() {
-    this.contentEl.empty();
-  }
+  onClose() { this.contentEl.empty(); }
 }
 
 export default class AuthorTodayImporter extends Plugin {
@@ -67,100 +55,97 @@ export default class AuthorTodayImporter extends Plugin {
 
   async importBook(url: string) {
     try {
-      const result = await requestUrl({ url });
+      // Fetch page HTML via Obsidian API
+      const result = await requestUrl({ url, method: 'GET' });
       const html = result.text;
       const parser = new DOMParser();
       const doc = parser.parseFromString(html, 'text/html');
 
-      let title = doc.querySelector('h1.work-page__title')?.textContent?.trim() || '';
-      if (!title) {
-        const fullTitle = doc.title;
-        title = fullTitle.split(' - ')[0]?.trim() || 'Unknown Title';
-      }
-
-      let author = doc.querySelector('.work-page__author a')?.textContent?.trim() || '';
-      if (!author) {
-        const parts = doc.title.split(' - ');
-        author = parts[1]?.trim() || '';
-      }
-      
-    // Получаем дату публикации из data-time
-    let publishDate = '';
-    const pubSpan = doc.querySelector('span.hint-top[data-format="calendar-short"]');
-    if (pubSpan) {
-      const dt = pubSpan.getAttribute('data-time');
-    if (dt) {
-        publishDate = dt.split('T')[0]; // YYYY-MM-DD
-      }
-    }
-      
-      const cover = doc.querySelector('meta[property="og:image"]')?.getAttribute('content') || '';
-      const description = doc.querySelector('meta[property="og:description"]')?.getAttribute('content') || '';
-
       // Compute import date for {{date}}
       const importDate = new Date().toISOString().split('T')[0];
 
-      // Извлекаем жанры из <div class="book-genres">
+      // Extract metadata
+      let title = doc.querySelector('h1.work-page__title')?.textContent?.trim() || '';
+      if (!title) title = doc.title.split(' - ')[0]?.trim() || 'Unknown Title';
+
+      let author = doc.querySelector('.work-page__author a')?.textContent?.trim() || '';
+      if (!author) author = doc.title.split(' - ')[1]?.trim() || '';
+
+      let publishDate = '';
+      const pubSpan = doc.querySelector('span.hint-top[data-format="calendar-short"]');
+      if (pubSpan?.getAttribute('data-time')) {
+        publishDate = pubSpan.getAttribute('data-time').split('T')[0];
+      }
+      // Sanitize base fileName (remove colons and special characters, keep spaces)
+      const fileName = title
+        .replace(/:/g, '')
+        .replace(/[^\p{L}\p{N}\s]/gu, '')
+        .trim();
+
+
+      const cover = doc.querySelector('meta[property="og:image"]')?.getAttribute('content') || '';
+      const description = doc.querySelector('meta[property="og:description"]')?.getAttribute('content') || '';
+
+      // Genres
       let category = '';
       const genreDiv = doc.querySelector('div.book-genres');
-      if (genreDiv) {
-      // textContent отдаст «Роман / Дорама, Попаданцы, Развитие личности»
-        category = genreDiv.textContent.trim();
-      }
-      // === Извлекаем цикл и номер ===
-      let series = '';
-      let series_number = '';
-      // Находим <span class="text-muted">Цикл:</span>
+      if (genreDiv) category = genreDiv.textContent.trim();
+
+      // Series and number
+      let series = '', series_number = '';
       const cycleLabel = Array.from(doc.querySelectorAll('span.text-muted'))
         .find(el => el.textContent.trim().startsWith('Цикл'));
       if (cycleLabel) {
-        // следом идёт <a> с названием цикла
         const linkEl = cycleLabel.nextElementSibling as HTMLAnchorElement;
         if (linkEl) {
           series = linkEl.textContent.trim();
-        // а за ним номер в цикле <span>&nbsp;#7</span>
-        const numEl = linkEl.nextElementSibling as HTMLElement;
-        const m = numEl?.textContent.match(/#(\d+)/);
-        if (m) series_number = m[1];
+          const numEl = linkEl.nextElementSibling as HTMLElement;
+          const m = numEl?.textContent.match(/#(\d+)/);
+          if (m) series_number = m[1];
         }
       }
-      // === Извлекаем примерный объём страниц ===
+
+      // Estimated pages
       let pages = '';
       const charsSpan = doc.querySelector('span.hint-top[data-hint^="Размер"]');
       if (charsSpan) {
-        // «390 842 зн.» → «390842»
         const raw = charsSpan.textContent.replace(/\D/g, '');
         const count = parseInt(raw, 10);
         pages = Math.ceil(count / 2000).toString();
       }
-      // === Extract current library status ===
+
+      // Reading status
       let status = '';
-      const libButton = doc.querySelector('library-button');
-      if (libButton) {
-        // внутри кнопки ищем первый <span> — в нём текст статуса
-        const span = libButton.querySelector('button span');
-        if (span?.textContent) {
-          status = span.textContent.trim().toLowerCase(); // например, "читаю"
+      const libBtn = doc.querySelector('library-button');
+      const span = libBtn?.querySelector('button span');
+      if (span?.textContent) status = span.textContent.trim().toLowerCase();
+
+      // Download cover locally
+      let localCover = '';
+      if (cover) {
+        try {
+          const imgResult = await requestUrl({ url: cover, method: 'GET' });
+          // `arrayBuffer` is already a property, not a function
+          const buffer = imgResult.arrayBuffer;
+          const imageName = `${fileName}.jpg`;
+          const imagePath = `${this.settings.coverFolder}/${imageName}`;
+          await this.app.vault.createBinary(imagePath, new Uint8Array(buffer));
+          localCover = imagePath;
+        } catch (e) {
+          console.warn('Cover download failed', e);
         }
       }
-      // Определяем имя файла
-      const fileName = title
-        .replace(/:/g, '')
-        .replace(/[^\p{L}\p{N}\s]/gu, '')
-        .trim()
-        .replace(/\s+/g, '_');
-      
-      // Determine unique file path
+
+      // Unique file path
       const basePath = `${this.settings.notesFolder}/${fileName}`;
       let filePath = `${basePath}.md`;
       let counter = 1;
-      // Use vault.adapter.exists to check for existing files
       while (await this.app.vault.adapter.exists(filePath)) {
         filePath = `${basePath}_${counter}.md`;
         counter++;
       }
 
-
+      // Build content via template or default
       let content = '';
       if (this.settings.templatePath) {
         const tplFile = this.app.vault.getAbstractFileByPath(this.settings.templatePath);
@@ -172,6 +157,7 @@ export default class AuthorTodayImporter extends Plugin {
             .replace(/\{\{author\}\}/g, author)
             .replace(/\{\{publishDate\}\}/g, publishDate)
             .replace(/\{\{cover\}\}/g, cover)
+            .replace(/\{\{localCover\}\}/g, localCover)
             .replace(/\{\{description\}\}/g, description)
             .replace(/\{\{category\}\}/g, category)
             .replace(/\{\{series\}\}/g, series)
@@ -186,15 +172,16 @@ export default class AuthorTodayImporter extends Plugin {
       }
       if (!content) {
         content = `---
+cover: "${localCover || cover}"
+localCover: "${localCover}"
 title: "${title}"
 author: "${author}"
-cover: "${cover}"
 category: "${category}"
 publishDate: "${publishDate}"
 source: "${url}"
 series: "[[${series}]]"
-series_number: "${series_number}"
-pages: "${pages}"
+series_number: ${series_number}
+pages: ${pages}
 status: "${status}"
 date: "${importDate}"
 ---
@@ -202,13 +189,10 @@ date: "${importDate}"
 ${description}`;
       }
 
-      // Now create the note
       await this.app.vault.create(filePath, content);
-      const file = this.app.vault.getAbstractFileByPath(filePath);
-      if (file instanceof TFile) {
-        this.app.workspace.getLeaf(true).openFile(file);
-      }
       new Notice(`Imported "${title}"`);
+      const newFile = this.app.vault.getAbstractFileByPath(filePath);
+      if (newFile instanceof TFile) this.app.workspace.getLeaf(true).openFile(newFile);
 
     } catch (e) {
       console.error(e);
@@ -246,5 +230,10 @@ class ImporterSettingTab extends PluginSettingTab {
       .setDesc('Relative path to note template')
       .addText(text => text.setPlaceholder('Templates/BookTemplate.md').setValue(this.plugin.settings.templatePath)
         .onChange(async v => { this.plugin.settings.templatePath = v; await this.plugin.saveSettings(); }));
+    new Setting(containerEl)
+      .setName('Cover Folder')
+      .setDesc('Folder where cover images will be saved')
+      .addText(text => text.setPlaceholder('images').setValue(this.plugin.settings.coverFolder)
+        .onChange(async v => { this.plugin.settings.coverFolder = v; await this.plugin.saveSettings(); }));
   }
 }
