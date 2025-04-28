@@ -46,7 +46,7 @@ class AuthorTodayImporter extends obsidian.Plugin {
         }).open();
     }
     async importBook(url) {
-        var _a, _b, _c, _d, _e, _f, _g, _h, _j, _k;
+        var _a, _b, _c, _d, _e, _f, _g, _h;
         try {
             // Fetch page HTML via Obsidian API
             const result = await obsidian.requestUrl({ url, method: 'GET' });
@@ -103,23 +103,23 @@ class AuthorTodayImporter extends obsidian.Plugin {
             }
             // Reading status
             let status = '';
-            // First try any visible button <span> text in the document
-            const globalSpan = doc.querySelector('button span');
-            if ((_j = globalSpan === null || globalSpan === void 0 ? void 0 : globalSpan.textContent) === null || _j === void 0 ? void 0 : _j.trim()) {
-                status = globalSpan.textContent.trim().toLowerCase();
-            }
-            else {
-                // Fallback: parse <library-button params="... state:'Reading' ...">
-                const libBtn = doc.querySelector('library-button');
-                const paramsStr = (_k = libBtn === null || libBtn === void 0 ? void 0 : libBtn.getAttribute('params')) !== null && _k !== void 0 ? _k : '';
-                const match = paramsStr.match(/state\s*:\s*'(\w+)'/);
-                if (match) {
-                    const st = match[1].toLowerCase();
-                    status = st === 'reading' ? 'читаю'
-                        : st === 'finished' ? 'прочитано'
-                            : st === 'planning' ? 'отложено'
-                                : st === 'disliked' ? 'не интересно'
-                                    : st;
+            const libBtn = doc.querySelector('library-button');
+            if (libBtn) {
+                const iconEl = libBtn.querySelector('i');
+                if (iconEl) {
+                    const cls = iconEl.className;
+                    if (cls.includes('icon-2-library-reading')) {
+                        status = 'читаю';
+                    }
+                    else if (cls.includes('icon-2-library-finished')) {
+                        status = 'прочитано';
+                    }
+                    else if (cls.includes('icon-2-clock')) {
+                        status = 'отложено';
+                    }
+                    else if (cls.includes('icon-eye-slash')) {
+                        status = 'не интересно';
+                    }
                 }
             }
             // Download cover locally

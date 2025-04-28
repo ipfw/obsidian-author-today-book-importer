@@ -116,22 +116,20 @@ export default class AuthorTodayImporter extends Plugin {
 
       // Reading status
       let status = '';
-      // First try any visible button <span> text in the document
-      const globalSpan = doc.querySelector('button span');
-      if (globalSpan?.textContent?.trim()) {
-        status = globalSpan.textContent.trim().toLowerCase();
-      } else {
-        // Fallback: parse <library-button params="... state:'Reading' ...">
-        const libBtn = doc.querySelector('library-button');
-        const paramsStr = libBtn?.getAttribute('params') ?? '';
-        const match = paramsStr.match(/state\s*:\s*'(\w+)'/);
-        if (match) {
-          const st = match[1].toLowerCase();
-          status = st === 'reading' ? 'читаю'
-                 : st === 'finished' ? 'прочитано'
-                 : st === 'planning' ? 'отложено'
-                 : st === 'disliked' ? 'не интересно'
-                 : st;
+      const libBtn = doc.querySelector('library-button');
+      if (libBtn) {
+        const iconEl = libBtn.querySelector('i');
+        if (iconEl) {
+          const cls = iconEl.className;
+          if (cls.includes('icon-2-library-reading')) {
+            status = 'читаю';
+          } else if (cls.includes('icon-2-library-finished')) {
+            status = 'прочитано';
+          } else if (cls.includes('icon-2-clock')) {
+            status = 'отложено';
+          } else if (cls.includes('icon-eye-slash')) {
+            status = 'не интересно';
+          }
         }
       }
 
