@@ -212,4 +212,3 @@ class ImporterSettingTab extends PluginSettingTab {
         .onChange(async v => { this.plugin.settings.templatePath = v; await this.plugin.saveSettings(); }));
   }
 }
-
