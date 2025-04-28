@@ -114,24 +114,8 @@ export default class AuthorTodayImporter extends Plugin {
         pages = Math.ceil(count / 2000).toString();
       }
 
-      // Reading status
-      let status = '';
-      const libBtn = doc.querySelector('library-button');
-      if (libBtn) {
-        const iconEl = libBtn.querySelector('i');
-        if (iconEl) {
-          const cls = iconEl.className;
-          if (cls.includes('icon-2-library-reading')) {
-            status = 'читаю';
-          } else if (cls.includes('icon-2-library-finished')) {
-            status = 'прочитано';
-          } else if (cls.includes('icon-2-clock')) {
-            status = 'отложено';
-          } else if (cls.includes('icon-eye-slash')) {
-            status = 'не интересно';
-          }
-        }
-      }
+      // Default status
+      const status = 'отложено';
 
       // Download cover locally
       let localCover = '';
