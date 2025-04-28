@@ -1,5 +1,5 @@
 # obsidian-author-today-book-importer
-An Obsidian plugin to import book metadata from Author.Today into Markdown notes
+An Obsidian plugin to import book metadata from Author.Today into Markdown note
 
 Для вашего шаблона плагин подставляет следующие плейсхолдеры:
 	•	{{title}} — название книги
@@ -13,4 +13,3 @@ An Obsidian plugin to import book metadata from Author.Today into Markdown notes
 	•	{{series}} — имя цикла (без скобок, оборачивается в шаблоне [[…]])
 	•	{{series_number}} — номер в цикле
 	•	{{pages}} — примерное число страниц (число знаков ÷ 2000, округл. вверх)
-    

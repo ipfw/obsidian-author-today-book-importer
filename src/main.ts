@@ -134,9 +134,14 @@ export default class AuthorTodayImporter extends Plugin {
         pages = Math.ceil(count / 2000).toString();
       }      
       const fileName = title
-      .replace(/[^\p{L}\p{N}\s]/gu, '') // remove any non-letter, non-number, non-space
-      .trim();
-      // можно заменить пробелы .replace(/\s+/g, '_');
+        // remove any colons
+        .replace(/:/g, '')
+        // remove any non-letter, non-number, non-space characters
+        .replace(/[^\p{L}\p{N}\s]/gu, '')
+        .trim();
+        // replace spaces with underscores
+        //.replace(/\s+/g, '_');
+      
       const filePath = `${this.settings.notesFolder}/${fileName}.md`;
 
       let content = '';
@@ -162,8 +167,20 @@ export default class AuthorTodayImporter extends Plugin {
         }
       }
       if (!content) {
-        content = `---\ntitle: "${title}"\nauthor: "${author}"\ncover: "${cover}"\ncategory: "${category}"\npubpish: "${publishDate}"\nsource: "${url}"\nseries: "[[${series}]]"\nseries_nember: "${series_number}"\n
-		pages: "${pages}"\n---\n### Аннотация\n\n${description}`;
+        content = `---
+        title: "${title}"
+        author: "${author}"
+        cover: "${cover}"
+        category: "${category}"
+        publish: "${publishDate}"
+        source: "${url}"
+        series: "[[${series}]]"
+        series_number: "${series_number}"
+        pages: "${pages}"
+        ---
+        ### Аннотация
+        ${description}`;
+        
       }
 
       await this.app.vault.create(filePath, content);
