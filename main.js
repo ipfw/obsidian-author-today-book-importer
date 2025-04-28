@@ -46,7 +46,7 @@ class AuthorTodayImporter extends obsidian.Plugin {
         }).open();
     }
     async importBook(url) {
-        var _a, _b, _c, _d, _e, _f, _g, _h, _j;
+        var _a, _b, _c, _d, _e, _f, _g, _h, _j, _k;
         try {
             // Fetch page HTML via Obsidian API
             const result = await obsidian.requestUrl({ url, method: 'GET' });
@@ -103,39 +103,23 @@ class AuthorTodayImporter extends obsidian.Plugin {
             }
             // Reading status
             let status = '';
-            const libBtn = doc.querySelector('library-button');
-            if (libBtn) {
-                // First, try button span text
-                const spanText = (_j = libBtn.querySelector('button span')) === null || _j === void 0 ? void 0 : _j.textContent.trim();
-                if (spanText) {
-                    status = spanText.toLowerCase();
-                }
-                else if (libBtn.hasAttribute('params')) {
-                    // Fallback: parse state from params attribute
-                    try {
-                        const paramsStr = libBtn.getAttribute('params');
-                        const paramsJson = paramsStr.replace(/'/g, '"');
-                        const params = JSON.parse(paramsJson);
-                        const state = String(params.state || '').toLowerCase();
-                        switch (state) {
-                            case 'reading':
-                                status = 'читаю';
-                                break;
-                            case 'finished':
-                                status = 'прочитано';
-                                break;
-                            case 'planning':
-                                status = 'отложено';
-                                break;
-                            case 'disliked':
-                                status = 'не интересно';
-                                break;
-                            default:
-                                status = state;
-                                break;
-                        }
-                    }
-                    catch { }
+            // First try any visible button <span> text in the document
+            const globalSpan = doc.querySelector('button span');
+            if ((_j = globalSpan === null || globalSpan === void 0 ? void 0 : globalSpan.textContent) === null || _j === void 0 ? void 0 : _j.trim()) {
+                status = globalSpan.textContent.trim().toLowerCase();
+            }
+            else {
+                // Fallback: parse <library-button params="... state:'Reading' ...">
+                const libBtn = doc.querySelector('library-button');
+                const paramsStr = (_k = libBtn === null || libBtn === void 0 ? void 0 : libBtn.getAttribute('params')) !== null && _k !== void 0 ? _k : '';
+                const match = paramsStr.match(/state\s*:\s*'(\w+)'/);
+                if (match) {
+                    const st = match[1].toLowerCase();
+                    status = st === 'reading' ? 'читаю'
+                        : st === 'finished' ? 'прочитано'
+                            : st === 'planning' ? 'отложено'
+                                : st === 'disliked' ? 'не интересно'
+                                    : st;
                 }
             }
             // Download cover locally
@@ -158,7 +142,8 @@ class AuthorTodayImporter extends obsidian.Plugin {
             const basePath = `${this.settings.notesFolder}/${fileName}`;
             let filePath = `${basePath}.md`;
             let counter = 1;
-            while (await this.app.vault.adapter.exists(filePath)) {
+            // Only add suffix if a file with the same path already exists
+            while (this.app.vault.getAbstractFileByPath(filePath)) {
                 filePath = `${basePath}_${counter}.md`;
                 counter++;
             }

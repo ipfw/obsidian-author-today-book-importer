@@ -116,25 +116,22 @@ export default class AuthorTodayImporter extends Plugin {
 
       // Reading status
       let status = '';
-      const libBtn = doc.querySelector('library-button');
-      if (libBtn) {
-        // Try to read visible label first
-        const spanText = libBtn.querySelector('button span')?.textContent?.trim();
-        if (spanText) {
-          status = spanText.toLowerCase();
-        } else {
-          // Fallback: extract from params attribute via regex
-          const paramsStr = libBtn.getAttribute('params') ?? '';
-          const match = paramsStr.match(/state\s*:\s*'(\w+)'/);
-          if (match) {
-            // Map English state to Russian
-            const st = match[1].toLowerCase();
-            status = st === 'reading' ? 'читаю'
-                   : st === 'finished' ? 'прочитано'
-                   : st === 'planning' ? 'отложено'
-                   : st === 'disliked' ? 'не интересно'
-                   : st;
-          }
+      // First try any visible button <span> text in the document
+      const globalSpan = doc.querySelector('button span');
+      if (globalSpan?.textContent?.trim()) {
+        status = globalSpan.textContent.trim().toLowerCase();
+      } else {
+        // Fallback: parse <library-button params="... state:'Reading' ...">
+        const libBtn = doc.querySelector('library-button');
+        const paramsStr = libBtn?.getAttribute('params') ?? '';
+        const match = paramsStr.match(/state\s*:\s*'(\w+)'/);
+        if (match) {
+          const st = match[1].toLowerCase();
+          status = st === 'reading' ? 'читаю'
+                 : st === 'finished' ? 'прочитано'
+                 : st === 'planning' ? 'отложено'
+                 : st === 'disliked' ? 'не интересно'
+                 : st;
         }
       }
 
