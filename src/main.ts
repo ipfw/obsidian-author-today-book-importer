@@ -98,7 +98,7 @@ export default class AuthorTodayImporter extends Plugin {
       if (cycleLabel) {
         const linkEl = cycleLabel.nextElementSibling as HTMLAnchorElement;
         if (linkEl) {
-          series = linkEl.textContent.trim();
+          series = linkEl.textContent.trim().replace(/['"]/g, '');
           const numEl = linkEl.nextElementSibling as HTMLElement;
           const m = numEl?.textContent.match(/#(\d+)/);
           if (m) series_number = m[1];

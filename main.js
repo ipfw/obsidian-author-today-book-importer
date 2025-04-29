@@ -86,7 +86,7 @@ class AuthorTodayImporter extends obsidian.Plugin {
             if (cycleLabel) {
                 const linkEl = cycleLabel.nextElementSibling;
                 if (linkEl) {
-                    series = linkEl.textContent.trim();
+                    series = linkEl.textContent.trim().replace(/['"]/g, '');
                     const numEl = linkEl.nextElementSibling;
                     const m = numEl === null || numEl === void 0 ? void 0 : numEl.textContent.match(/#(\d+)/);
                     if (m)
