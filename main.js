@@ -15,7 +15,7 @@ class UrlPromptModal extends obsidian.Modal {
     }
     onOpen() {
         const { contentEl } = this;
-        contentEl.createEl('h2', { text: 'Enter Author.Today book URL' });
+        contentEl.createEl('h2', { text: 'Enter book URL' });
         const input = contentEl.createEl('input', { type: 'text' });
         input.style.width = '100%';
         const submit = contentEl.createEl('button', { text: 'Import' });
@@ -117,15 +117,19 @@ class AuthorTodayImporter extends obsidian.Plugin {
             // Default status
             const status = 'отложено';
             const publisher = 'АТ';
-            // Download cover locally
+            // Download cover locally, always save with unique name if needed
             let localCover = '';
             if (cover) {
                 try {
+                    let baseImagePath = `${this.settings.coverFolder}/${fileName}`;
+                    let imagePath = `${baseImagePath}.jpg`;
+                    let imageCounter = 1;
+                    while (await this.app.vault.adapter.exists(imagePath)) {
+                        imagePath = `${baseImagePath}_${imageCounter}.jpg`;
+                        imageCounter++;
+                    }
                     const imgResult = await obsidian.requestUrl({ url: cover, method: 'GET' });
-                    // `arrayBuffer` is already a property, not a function
                     const buffer = imgResult.arrayBuffer;
-                    const imageName = `${fileName}.jpg`;
-                    const imagePath = `${this.settings.coverFolder}/${imageName}`;
                     await this.app.vault.createBinary(imagePath, new Uint8Array(buffer));
                     localCover = imagePath;
                 }
@@ -179,9 +183,9 @@ category: "${category}"
 publishDate: "${publishDate}"
 source: "${url}"
 series: "[[${series}]]"
-series_number: ${series_number}
+series_number: "${series_number}"
 publisher: "${publisher}"
-pages: ${pages}
+pages: "${pages}"
 status: "${status}"
 date: "${importDate}"
 ---
@@ -200,60 +204,89 @@ ${description}`;
         }
     }
     async importYandexBook(url) {
-        var _a, _b, _c, _d, _e, _f;
+        var _a, _b, _c, _d, _e;
         try {
             const result = await obsidian.requestUrl({ url, method: 'GET' });
             const html = result.text;
             const parser = new DOMParser();
             const doc = parser.parseFromString(html, 'text/html');
-            // Use actual <title> for book title and extract author and description based on book page structure
-            let title = ((_c = (_b = (_a = doc.querySelector('title')) === null || _a === void 0 ? void 0 : _a.textContent) === null || _b === void 0 ? void 0 : _b.split(' — ')[0]) === null || _c === void 0 ? void 0 : _c.trim()) || 'Unknown Title';
-            // Attempt to extract author - updated selector logic
+            console.log("Yandex page HTML:", doc.body.innerHTML.slice(0, 1000));
+            console.log("OG title:", (_a = doc.querySelector('meta[property="og:title"]')) === null || _a === void 0 ? void 0 : _a.getAttribute('content'));
+            console.log("OG desc:", (_b = doc.querySelector('meta[property="og:description"]')) === null || _b === void 0 ? void 0 : _b.getAttribute('content'));
+            // Title parsing
+            let title = '';
+            const titleEl = doc.querySelector('[data-test-id="CONTENT_TITLE_MAIN"]');
+            if (titleEl) {
+                title = titleEl.textContent.trim();
+            }
+            else {
+                const ogTitle = (_d = (_c = doc.querySelector('meta[property="og:title"]')) === null || _c === void 0 ? void 0 : _c.getAttribute('content')) === null || _d === void 0 ? void 0 : _d.trim();
+                title = ogTitle
+                    ? ogTitle.replace(/^Читать\s+/, '').replace(/\s+—.+$/, '').trim()
+                    : 'Unknown Title';
+            }
+            // Description parsing
+            let description = '';
+            const descEl = doc.querySelector('.ExpandableText_text__2OFwq');
+            if (descEl) {
+                description = descEl.textContent.trim().replace(/\s+/g, ' ');
+            }
+            // Series and number
+            let series = '';
+            let series_number = '';
+            const seriesEl = Array.from(doc.querySelectorAll('li')).find(el => el.textContent.includes('Серия:'));
+            if (seriesEl) {
+                const seriesText = seriesEl.textContent.replace('Серия:', '').trim();
+                const seriesNumMatch = seriesText.match(/(.+?)\s*#(\d+)/);
+                if (seriesNumMatch) {
+                    series = seriesNumMatch[1].trim();
+                    series_number = seriesNumMatch[2];
+                }
+                else {
+                    series = seriesText;
+                }
+            }
+            // Author
             let author = '';
-            const authorEl = (_d = doc.querySelector('.book-author a')) !== null && _d !== void 0 ? _d : doc.querySelector('a[href^="/authors/"]');
+            const authorEl = doc.querySelector('[data-test-id="CONTENT_TITLE_AUTHOR"] a');
             if (authorEl) {
                 author = authorEl.textContent.trim();
             }
-            // Extract description - example selector, fallback to meta description if not found
-            let description = '';
-            const descEl = doc.querySelector('div.book-description__text');
-            if (descEl) {
-                description = descEl.textContent.trim();
-            }
-            else {
-                description = ((_e = doc.querySelector('meta[name="description"]')) === null || _e === void 0 ? void 0 : _e.getAttribute('content')) || '';
-            }
-            // Извлечение категорий
+            // Categories
             let category = '';
-            const genreBlock = doc.querySelector('.book-genres');
-            if (genreBlock) {
-                const genres = Array.from(genreBlock.querySelectorAll('a')).map(el => el.textContent.trim());
-                category = genres.join(', ');
+            const topicsEl = doc.querySelector('[data-test-id="CONTENT_TOPICS"]');
+            if (topicsEl) {
+                category = Array.from(topicsEl.querySelectorAll('a'))
+                    .map(el => el.textContent.trim())
+                    .join(', ');
             }
-            // Извлечение издателя
+            // Publisher
             let publisher = '';
-            const pubEl = Array.from(doc.querySelectorAll('li')).find(el => el.textContent.includes('Издательство:'));
+            const pubEl = doc.querySelector('.ContentInfo_value__04NMq a');
             if (pubEl) {
-                const match = pubEl.textContent.match(/Издательство:\s*(.+)/);
-                if (match)
-                    publisher = match[1].trim();
+                publisher = pubEl.textContent.trim();
             }
-            // Extract pages from "Бумажных страниц: N"
+            // Pages
             let pages = '';
-            const pagesEl = Array.from(doc.querySelectorAll('li')).find(el => el.textContent.includes('Бумажных страниц:'));
-            if (pagesEl) {
-                const match = pagesEl.textContent.match(/Бумажных страниц:\s*(\d+)/);
-                if (match)
-                    pages = match[1];
+            const infoDivs = Array.from(doc.querySelectorAll('div[data-test-id="CONTENT_INFO"]'));
+            for (const div of infoDivs) {
+                const label = div.querySelector('span.ContentInfo_label__uGu8H');
+                if ((label === null || label === void 0 ? void 0 : label.textContent.trim()) === 'Бумажных страниц:') {
+                    const valueEl = div.querySelector('span.ContentInfo_value__04NMq');
+                    if (valueEl) {
+                        pages = valueEl.textContent.trim();
+                    }
+                    break;
+                }
             }
+            // 8. Default status
             const status = 'отложено';
-            // Compute import date
+            // 9. Import date and file name
             const importDate = new Date().toISOString().split('T')[0];
-            // Sanitize fileName
             const fileName = title.replace(/[:\\/\\?%*|"<>]/g, '').trim();
-            // Extract cover image URL - updated logic to match real image URLs
+            // 10. Cover
             let cover = '';
-            const coverEl = (_f = doc.querySelector('img.book-cover__image')) !== null && _f !== void 0 ? _f : doc.querySelector('img[src*="assets/books-covers/"]');
+            const coverEl = (_e = doc.querySelector('img.book-cover__image')) !== null && _e !== void 0 ? _e : doc.querySelector('img[src*="assets/books-covers/"]');
             if (coverEl) {
                 cover = coverEl.getAttribute('src') || '';
                 if (cover && cover.startsWith('//')) {
@@ -265,20 +298,25 @@ ${description}`;
                 if (og)
                     cover = og.getAttribute('content') || '';
             }
-            // Download cover locally
+            // 11. Download cover locally
             let localCover = '';
             if (cover) {
                 try {
+                    let baseImagePath = `${this.settings.coverFolder}/${fileName}`;
+                    let imagePath = `${baseImagePath}.jpg`;
+                    let imageCounter = 1;
+                    while (await this.app.vault.adapter.exists(imagePath)) {
+                        imagePath = `${baseImagePath}_${imageCounter}.jpg`;
+                        imageCounter++;
+                    }
                     const imgResult = await obsidian.requestUrl({ url: cover, method: 'GET' });
                     const buffer = imgResult.arrayBuffer;
-                    const imageName = `${fileName}.jpg`;
-                    const imagePath = `${this.settings.coverFolder}/${imageName}`;
                     await this.app.vault.createBinary(imagePath, new Uint8Array(buffer));
                     localCover = imagePath;
                 }
                 catch { /* ignore */ }
             }
-            // Ensure unique file path
+            // 12. Ensure unique file path
             const basePath = `${this.settings.notesFolder}/${fileName}`;
             let filePath = `${basePath}.md`;
             let counter = 1;
@@ -286,7 +324,9 @@ ${description}`;
                 filePath = `${basePath}_${counter}.md`;
                 counter++;
             }
-            // Use template if provided
+            // 13. Remove quotes from series
+            series = series.replace(/['"]/g, '').trim();
+            // 14. Use template if provided
             let content = '';
             if (this.settings.templatePath) {
                 const tplFile = this.app.vault.getAbstractFileByPath(this.settings.templatePath);
@@ -300,6 +340,8 @@ ${description}`;
                         .replace(/\{\{localCover\}\}/g, localCover)
                         .replace(/\{\{description\}\}/g, description)
                         .replace(/\{\{category\}\}/g, category)
+                        .replace(/\{\{series\}\}/g, series)
+                        .replace(/\{\{series_number\}\}/g, series_number)
                         .replace(/\{\{pages\}\}/g, pages)
                         .replace(/\{\{publisher\}\}/g, publisher)
                         .replace(/\{\{status\}\}/g, status)
@@ -310,17 +352,23 @@ ${description}`;
                     new obsidian.Notice(`🔴 Template not found: ${this.settings.templatePath}`);
                 }
             }
+            // 15. PublishDate
+            let publishDate = ' ';
             if (!content) {
-                const content = `---
+                content = `---
 title: "${title}"
 author: "${author}"
+description: "${description}"
+publisher: "${publisher}"
+publishDate: ""
+pages: "${pages}"
 cover: "${cover}"
 localCover: "${localCover}"
 category: "${category}"
+series: "[[${series}]]"
+series_number: "${series_number}"
 source: "${url}"
 date: "${importDate}"
-pages: "${pages}"
-publisher: "${publisher}"
 status: "${status}"
 ---
 
