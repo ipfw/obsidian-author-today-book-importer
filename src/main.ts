@@ -79,6 +79,8 @@ export default class AuthorTodayImporter extends Plugin {
       // Extract metadata
       let title = doc.querySelector('h1.work-page__title')?.textContent?.trim() || '';
       if (!title) title = doc.title.split(' - ')[0]?.trim() || 'Unknown Title';
+      // Remove colons from title
+      title = title.replace(/:/g, '');
 
       let author = doc.querySelector('.work-page__author a')?.textContent?.trim() || '';
       if (!author) author = doc.title.split(' - ')[1]?.trim() || '';
@@ -102,6 +104,8 @@ export default class AuthorTodayImporter extends Plugin {
       let category = '';
       const genreDiv = doc.querySelector('div.book-genres');
       if (genreDiv) category = genreDiv.textContent.trim();
+      // Normalize slash separators into commas, for YAML array
+      category = category.replace(/\s*\/\s*/g, ', ');
 
       // Series and number
       let series = '', series_number = '';
@@ -238,6 +242,8 @@ ${description}`;
           ? ogTitle.replace(/^Читать\s+/, '').replace(/\s+—.+$/, '').trim()
           : 'Unknown Title';
       }
+      // Remove colons from title
+      title = title.replace(/:/g, '');
 
       // Description parsing
       let description = '';
@@ -276,6 +282,8 @@ ${description}`;
           .map(el => el.textContent.trim())
           .join(', ');
       }
+      // Normalize slash separators into commas, for YAML array
+      category = category.replace(/\s*\/\s*/g, ', ');
 
       // Publisher
       let publisher = '';

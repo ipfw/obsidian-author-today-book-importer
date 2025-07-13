@@ -72,6 +72,8 @@ class AuthorTodayImporter extends obsidian.Plugin {
             let title = ((_b = (_a = doc.querySelector('h1.work-page__title')) === null || _a === void 0 ? void 0 : _a.textContent) === null || _b === void 0 ? void 0 : _b.trim()) || '';
             if (!title)
                 title = ((_c = doc.title.split(' - ')[0]) === null || _c === void 0 ? void 0 : _c.trim()) || 'Unknown Title';
+            // Remove colons from title
+            title = title.replace(/:/g, '');
             let author = ((_e = (_d = doc.querySelector('.work-page__author a')) === null || _d === void 0 ? void 0 : _d.textContent) === null || _e === void 0 ? void 0 : _e.trim()) || '';
             if (!author)
                 author = ((_f = doc.title.split(' - ')[1]) === null || _f === void 0 ? void 0 : _f.trim()) || '';
@@ -92,6 +94,8 @@ class AuthorTodayImporter extends obsidian.Plugin {
             const genreDiv = doc.querySelector('div.book-genres');
             if (genreDiv)
                 category = genreDiv.textContent.trim();
+            // Normalize slash separators into commas, for YAML array
+            category = category.replace(/\s*\/\s*/g, ', ');
             // Series and number
             let series = '', series_number = '';
             const cycleLabel = Array.from(doc.querySelectorAll('span.text-muted'))
@@ -225,6 +229,8 @@ ${description}`;
                     ? ogTitle.replace(/^Читать\s+/, '').replace(/\s+—.+$/, '').trim()
                     : 'Unknown Title';
             }
+            // Remove colons from title
+            title = title.replace(/:/g, '');
             // Description parsing
             let description = '';
             const descEl = doc.querySelector('.ExpandableText_text__2OFwq');
@@ -260,6 +266,8 @@ ${description}`;
                     .map(el => el.textContent.trim())
                     .join(', ');
             }
+            // Normalize slash separators into commas, for YAML array
+            category = category.replace(/\s*\/\s*/g, ', ');
             // Publisher
             let publisher = '';
             const pubEl = doc.querySelector('.ContentInfo_value__04NMq a');
