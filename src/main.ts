@@ -12,7 +12,7 @@ const DEFAULT_SETTINGS: ImporterSettings = {
   coverFolder: 'images'
 };
 
-// Modal for entering a URL
+// Модальное окно для ввода URL
 class UrlPromptModal extends Modal {
   private promptResult: (value: string) => void;
   constructor(app: App, promptResult: (value: string) => void) {
@@ -64,44 +64,44 @@ export default class AuthorTodayImporter extends Plugin {
 
   async importBook(url: string) {
     try {
-      // Fetch page HTML via Obsidian API
+      // Получить HTML страницы через API Obsidian
       const result = await requestUrl({ url, method: 'GET' });
       const html = result.text;
       const parser = new DOMParser();
       const doc = parser.parseFromString(html, 'text/html');
 
-      // Compute import date for {{date}}
+      // Вычислить дату импорта для {{date}}
       const importDate = new Date().toISOString().split('T')[0];
 
-      // Extract metadata
+      // Извлечь метаданные
       let title = doc.querySelector('h1.work-page__title')?.textContent?.trim() || '';
       if (!title) title = doc.title.split(' - ')[0]?.trim() || 'Unknown Title';
-      // Remove quotes, colons, and special characters from title
+      // Удалить кавычки, двоеточия и специальные символы из названия
       title = title.replace(/['":]/g, '').replace(/[^\p{L}\p{N}\s]/gu, '').trim();
 
       let author = doc.querySelector('.work-page__author a')?.textContent?.trim() || '';
       if (!author) author = doc.title.split(' - ')[1]?.trim() || '';
 
-      // Published variable for {{published}}
+      // Переменная published для {{published}}
       let published = '';
-      const pubSpan = doc.querySelector('span.hint-top[data-format="calendar-short"]');
-      if (pubSpan?.getAttribute('data-time')) {
-        published = pubSpan.getAttribute('data-time').split('T')[0];
+      const pubSpan = doc.querySelector('span.hint-top[data-time]');
+      if (pubSpan) {
+        published = pubSpan.getAttribute('data-time')?.split('T')[0] || '';
       }
-      // Sanitize base fileName (remove special characters, keep spaces)
+      // Очистить базовое имя файла (удалить спецсимволы, оставить пробелы)
       const fileName = title;
 
       const cover = doc.querySelector('meta[property="og:image"]')?.getAttribute('content') || '';
       const description = doc.querySelector('meta[property="og:description"]')?.getAttribute('content') || '';
 
-      // Genres
+      // Жанры
       let category = '';
       const genreDiv = doc.querySelector('div.book-genres');
       if (genreDiv) category = genreDiv.textContent.trim();
-      // Normalize slash separators into commas, for YAML array
+      // Преобразовать слэши в запятые для YAML-массива
       category = category.replace(/\s*\/\s*/g, ', ').replace(/[\r\n]+/g, ', ');
 
-      // Series and number
+      // Серия и номер
       let series = '', series_number = '';
       const cycleLabel = Array.from(doc.querySelectorAll('span.text-muted'))
         .find(el => el.textContent.trim().startsWith('Цикл'));
@@ -114,9 +114,9 @@ export default class AuthorTodayImporter extends Plugin {
           if (m) series_number = m[1];
         }
       }
-      series = series.replace(/['"]/g, '').trim();
+      series = series.replace(/['":]/g, '').replace(/[^\p{L}\p{N}\s]/gu, '').trim();
 
-      // Estimated pages
+      // Оценочное количество страниц
       let pages = '';
       const charsSpan = doc.querySelector('span.hint-top[data-hint^="Размер"]');
       if (charsSpan) {
@@ -125,11 +125,11 @@ export default class AuthorTodayImporter extends Plugin {
         pages = Math.ceil(count / 2000).toString();
       }
 
-      // Default status
+      // Статус по умолчанию
       const status = 'отложено';
       const publisher = 'АТ';
 
-      // Download cover locally, always save with unique name if needed
+      // Скачать обложку локально, всегда сохранять с уникальным именем при необходимости
       let localCover = '';
       if (cover) {
         try {
@@ -149,17 +149,17 @@ export default class AuthorTodayImporter extends Plugin {
         }
       }
 
-      // Unique file path
+      // Уникальный путь к файлу
       const basePath = `${this.settings.notesFolder}/${fileName}`;
       let filePath = `${basePath}.md`;
       let counter = 1;
-      // Only add suffix if a file with the same path already exists
+      // Добавлять суффикс только если файл с таким именем уже существует
       while (this.app.vault.getAbstractFileByPath(filePath)) {
         filePath = `${basePath}_${counter}.md`;
         counter++;
       }
 
-      // Build content via template or default
+      // Создать содержимое через шаблон или по умолчанию
       let content = '';
       if (this.settings.templatePath) {
         const tplFile = this.app.vault.getAbstractFileByPath(this.settings.templatePath);
@@ -196,6 +196,7 @@ published: "${published}"
 source: "${url}"
 series: "[[${series}]]"
 series_number: "${series_number}"
+seriesname: "${series}"
 publisher: "${publisher}"
 pages: "${pages}"
 status: "${status}"
@@ -226,7 +227,7 @@ ${description}`;
       console.log("OG title:", doc.querySelector('meta[property="og:title"]')?.getAttribute('content'));
       console.log("OG desc:", doc.querySelector('meta[property="og:description"]')?.getAttribute('content'));
 
-      // Title parsing
+      // Парсинг названия
       let title = '';
       const titleEl = doc.querySelector('[data-test-id="CONTENT_TITLE_MAIN"]');
       if (titleEl) {
@@ -237,17 +238,17 @@ ${description}`;
           ? ogTitle.replace(/^Читать\s+/, '').replace(/\s+—.+$/, '').trim()
           : 'Unknown Title';
       }
-      // Remove quotes, colons, and special characters from title
+      // Удалить кавычки, двоеточия и специальные символы из названия
       title = title.replace(/['":]/g, '').replace(/[^\p{L}\p{N}\s]/gu, '').trim();
 
-      // Description parsing
+      // Парсинг описания
       let description = '';
       const descEl = doc.querySelector('.ExpandableText_text__2OFwq');
       if (descEl) {
         description = descEl.textContent.trim().replace(/\s+/g, ' ');
       }
 
-      // Series and number
+      // Серия и номер
       let series = '';
       let series_number = '';
       const seriesEl = Array.from(doc.querySelectorAll('li')).find(el => el.textContent.includes('Серия:'));
@@ -262,14 +263,14 @@ ${description}`;
         }
       }
 
-      // Author
+      // Автор
       let author = '';
       const authorEl = doc.querySelector('[data-test-id="CONTENT_TITLE_AUTHOR"] a');
       if (authorEl) {
         author = authorEl.textContent.trim();
       }
 
-      // Categories
+      // Категории
       let category = '';
       const topicsEl = doc.querySelector('[data-test-id="CONTENT_TOPICS"]');
       if (topicsEl) {
@@ -277,17 +278,17 @@ ${description}`;
           .map(el => el.textContent.trim())
           .join(', ');
       }
-      // Normalize slash separators into commas, for YAML array
+      // Преобразовать слэши в запятые для YAML-массива
       category = category.replace(/\s*\/\s*/g, ', ').replace(/[\r\n]+/g, ', ');
 
-      // Publisher
+      // Издатель
       let publisher = '';
       const pubEl = doc.querySelector('.ContentInfo_value__04NMq a');
       if (pubEl) {
         publisher = pubEl.textContent.trim();
       }
 
-      // Pages
+      // Страницы
       let pages = '';
       const infoDivs = Array.from(doc.querySelectorAll('div[data-test-id="CONTENT_INFO"]'));
       for (const div of infoDivs) {
@@ -301,14 +302,14 @@ ${description}`;
         }
       }
 
-      // 8. Default status
+      // 8. Статус по умолчанию
       const status = 'отложено';
 
-      // 9. Import date and file name
+      // 9. Дата импорта и имя файла
       const importDate = new Date().toISOString().split('T')[0];
       const fileName = title;
 
-      // 10. Cover
+      // 10. Обложка
       let cover = '';
       const coverEl = doc.querySelector('img.book-cover__image') ?? doc.querySelector('img[src*="assets/books-covers/"]');
       if (coverEl) {
@@ -322,7 +323,7 @@ ${description}`;
         if (og) cover = og.getAttribute('content') || '';
       }
 
-      // 11. Download cover locally
+      // 11. Скачать обложку локально
       let localCover = '';
       if (cover) {
         try {
@@ -340,7 +341,7 @@ ${description}`;
         } catch { /* ignore */ }
       }
 
-      // 12. Ensure unique file path
+      // 12. Обеспечить уникальность пути к файлу
       const basePath = `${this.settings.notesFolder}/${fileName}`;
       let filePath = `${basePath}.md`;
       let counter = 1;
@@ -349,11 +350,11 @@ ${description}`;
         counter++;
       }
 
-      // 13. Remove quotes from series
-      series = series.replace(/['"]/g, '').trim();
+      // 13. Удалить кавычки из серии
+      series = series.replace(/['":]/g, '').replace(/[^\p{L}\p{N}\s]/gu, '').trim();
 
-      // 14. Use template if provided
-      // Published variable for {{published}} (no publish date from Yandex)
+      // 14. Использовать шаблон, если он задан
+      // Переменная published для {{published}} (нет даты публикации у Yandex)
       const published = '';
       let content = '';
       if (this.settings.templatePath) {
@@ -384,7 +385,6 @@ ${description}`;
         content = `---
 title: "${title}"
 author: "${author}"
-description: "${description}"
 publisher: "${publisher}"
 published: "${published}"
 pages: "${pages}"
@@ -393,6 +393,7 @@ localCover: "${localCover}"
 category: "${category}"
 series: "[[${series}]]"
 series_number: "${series_number}"
+seriesname: "${series}"
 source: "${url}"
 date: "${importDate}"
 status: "${status}"
