@@ -39,29 +39,26 @@ export default class AuthorTodayImporter extends Plugin {
   async onload() {
     await this.loadSettings();
     this.addCommand({
-      id: 'import-author-today-book',
-      name: 'Import Book from Author.Today',
-      callback: () => this.openPrompt()
-    });
-    this.addCommand({
-      id: 'import-yandex-book',
-      name: 'Import Book from Yandex.Books',
-      callback: () => this.openPromptYandex()
+      id: 'import-book-auto',
+      name: 'Import Book (Auto)',
+      callback: () => this.openPromptAuto()
     });
     this.addSettingTab(new ImporterSettingTab(this.app, this));
   }
 
-  openPrompt() {
-    new UrlPromptModal(this.app, url => {
-      if (url) this.importBook(url);
-      else new Notice('No URL provided');
-    }).open();
-  }
-
-  openPromptYandex() {
+  openPromptAuto() {
     new UrlPromptModal(this.app, (url) => {
-      if (url) this.importYandexBook(url);
-      else new Notice('No URL provided');
+      if (!url) {
+        new Notice('No URL provided');
+        return;
+      }
+      if (url.includes('author.today')) {
+        this.importBook(url);
+      } else if (url.includes('books.yandex.ru')) {
+        this.importYandexBook(url);
+      } else {
+        new Notice('Unsupported book source');
+      }
     }).open();
   }
 
@@ -79,23 +76,20 @@ export default class AuthorTodayImporter extends Plugin {
       // Extract metadata
       let title = doc.querySelector('h1.work-page__title')?.textContent?.trim() || '';
       if (!title) title = doc.title.split(' - ')[0]?.trim() || 'Unknown Title';
-      // Remove colons from title
-      title = title.replace(/:/g, '');
+      // Remove quotes, colons, and special characters from title
+      title = title.replace(/['":]/g, '').replace(/[^\p{L}\p{N}\s]/gu, '').trim();
 
       let author = doc.querySelector('.work-page__author a')?.textContent?.trim() || '';
       if (!author) author = doc.title.split(' - ')[1]?.trim() || '';
 
-      let publishDate = '';
+      // Published variable for {{published}}
+      let published = '';
       const pubSpan = doc.querySelector('span.hint-top[data-format="calendar-short"]');
       if (pubSpan?.getAttribute('data-time')) {
-        publishDate = pubSpan.getAttribute('data-time').split('T')[0];
+        published = pubSpan.getAttribute('data-time').split('T')[0];
       }
-      // Sanitize base fileName (remove colons and special characters, keep spaces)
-      const fileName = title
-        .replace(/:/g, '')
-        .replace(/[^\p{L}\p{N}\s]/gu, '')
-        .trim();
-
+      // Sanitize base fileName (remove special characters, keep spaces)
+      const fileName = title;
 
       const cover = doc.querySelector('meta[property="og:image"]')?.getAttribute('content') || '';
       const description = doc.querySelector('meta[property="og:description"]')?.getAttribute('content') || '';
@@ -105,7 +99,7 @@ export default class AuthorTodayImporter extends Plugin {
       const genreDiv = doc.querySelector('div.book-genres');
       if (genreDiv) category = genreDiv.textContent.trim();
       // Normalize slash separators into commas, for YAML array
-      category = category.replace(/\s*\/\s*/g, ', ');
+      category = category.replace(/\s*\/\s*/g, ', ').replace(/[\r\n]+/g, ', ');
 
       // Series and number
       let series = '', series_number = '';
@@ -120,6 +114,7 @@ export default class AuthorTodayImporter extends Plugin {
           if (m) series_number = m[1];
         }
       }
+      series = series.replace(/['"]/g, '').trim();
 
       // Estimated pages
       let pages = '';
@@ -147,7 +142,7 @@ export default class AuthorTodayImporter extends Plugin {
           }
           const imgResult = await requestUrl({ url: cover, method: 'GET' });
           const buffer: ArrayBuffer = imgResult.arrayBuffer;
-          await this.app.vault.createBinary(imagePath, new Uint8Array(buffer));
+          await this.app.vault.createBinary(imagePath, buffer);
           localCover = imagePath;
         } catch (e) {
           console.warn('Cover download failed', e);
@@ -174,7 +169,7 @@ export default class AuthorTodayImporter extends Plugin {
             .replace(/\{\{date\}\}/g, importDate)
             .replace(/\{\{title\}\}/g, title)
             .replace(/\{\{author\}\}/g, author)
-            .replace(/\{\{publishDate\}\}/g, publishDate)
+            .replace(/\{\{published\}\}/g, published)
             .replace(/\{\{cover\}\}/g, cover)
             .replace(/\{\{localCover\}\}/g, localCover)
             .replace(/\{\{description\}\}/g, description)
@@ -197,7 +192,7 @@ localCover: "${localCover}"
 title: "${title}"
 author: "${author}"
 category: "${category}"
-publishDate: "${publishDate}"
+published: "${published}"
 source: "${url}"
 series: "[[${series}]]"
 series_number: "${series_number}"
@@ -242,8 +237,8 @@ ${description}`;
           ? ogTitle.replace(/^Читать\s+/, '').replace(/\s+—.+$/, '').trim()
           : 'Unknown Title';
       }
-      // Remove colons from title
-      title = title.replace(/:/g, '');
+      // Remove quotes, colons, and special characters from title
+      title = title.replace(/['":]/g, '').replace(/[^\p{L}\p{N}\s]/gu, '').trim();
 
       // Description parsing
       let description = '';
@@ -283,7 +278,7 @@ ${description}`;
           .join(', ');
       }
       // Normalize slash separators into commas, for YAML array
-      category = category.replace(/\s*\/\s*/g, ', ');
+      category = category.replace(/\s*\/\s*/g, ', ').replace(/[\r\n]+/g, ', ');
 
       // Publisher
       let publisher = '';
@@ -311,7 +306,7 @@ ${description}`;
 
       // 9. Import date and file name
       const importDate = new Date().toISOString().split('T')[0];
-      const fileName = title.replace(/[:\\/\\?%*|"<>]/g, '').trim();
+      const fileName = title;
 
       // 10. Cover
       let cover = '';
@@ -340,7 +335,7 @@ ${description}`;
           }
           const imgResult = await requestUrl({ url: cover, method: 'GET' });
           const buffer: ArrayBuffer = imgResult.arrayBuffer;
-          await this.app.vault.createBinary(imagePath, new Uint8Array(buffer));
+          await this.app.vault.createBinary(imagePath, buffer);
           localCover = imagePath;
         } catch { /* ignore */ }
       }
@@ -358,6 +353,8 @@ ${description}`;
       series = series.replace(/['"]/g, '').trim();
 
       // 14. Use template if provided
+      // Published variable for {{published}} (no publish date from Yandex)
+      const published = '';
       let content = '';
       if (this.settings.templatePath) {
         const tplFile = this.app.vault.getAbstractFileByPath(this.settings.templatePath);
@@ -376,21 +373,20 @@ ${description}`;
             .replace(/\{\{pages\}\}/g, pages)
             .replace(/\{\{publisher\}\}/g, publisher)
             .replace(/\{\{status\}\}/g, status)
-            .replace(/\{\{source\}\}/g, url);
+            .replace(/\{\{source\}\}/g, url)
+            .replace(/\{\{published\}\}/g, published);
           content = tpl;
         } else {
           new Notice(`🔴 Template not found: ${this.settings.templatePath}`);
         }
       }
-      // 15. PublishDate
-      let publishDate = ' ';
       if (!content) {
         content = `---
 title: "${title}"
 author: "${author}"
 description: "${description}"
 publisher: "${publisher}"
-publishDate: ""
+published: "${published}"
 pages: "${pages}"
 cover: "${cover}"
 localCover: "${localCover}"

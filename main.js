@@ -134,7 +134,7 @@ class AuthorTodayImporter extends obsidian.Plugin {
                     }
                     const imgResult = await obsidian.requestUrl({ url: cover, method: 'GET' });
                     const buffer = imgResult.arrayBuffer;
-                    await this.app.vault.createBinary(imagePath, new Uint8Array(buffer));
+                    await this.app.vault.createBinary(imagePath, buffer);
                     localCover = imagePath;
                 }
                 catch (e) {
@@ -319,7 +319,7 @@ ${description}`;
                     }
                     const imgResult = await obsidian.requestUrl({ url: cover, method: 'GET' });
                     const buffer = imgResult.arrayBuffer;
-                    await this.app.vault.createBinary(imagePath, new Uint8Array(buffer));
+                    await this.app.vault.createBinary(imagePath, buffer);
                     localCover = imagePath;
                 }
                 catch { /* ignore */ }
