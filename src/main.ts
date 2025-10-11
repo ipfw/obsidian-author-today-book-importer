@@ -91,7 +91,7 @@ export default class AuthorTodayImporter extends Plugin {
       // Очистить базовое имя файла (удалить спецсимволы, оставить пробелы)
       const fileName = title;
 
-      const cover = doc.querySelector('meta[property="og:image"]')?.getAttribute('content') || '';
+      const coverURL = doc.querySelector('meta[property="og:image"]')?.getAttribute('content') || '';
       const description = doc.querySelector('meta[property="og:description"]')?.getAttribute('content') || '';
 
       // Жанры
@@ -130,8 +130,8 @@ export default class AuthorTodayImporter extends Plugin {
       const publisher = 'АТ';
 
       // Скачать обложку локально, всегда сохранять с уникальным именем при необходимости
-      let localCover = '';
-      if (cover) {
+      let cover = '';
+      if (coverURL) {
         try {
           let baseImagePath = `${this.settings.coverFolder}/${fileName}`;
           let imagePath = `${baseImagePath}.jpg`;
@@ -140,10 +140,10 @@ export default class AuthorTodayImporter extends Plugin {
             imagePath = `${baseImagePath}_${imageCounter}.jpg`;
             imageCounter++;
           }
-          const imgResult = await requestUrl({ url: cover, method: 'GET' });
+          const imgResult = await requestUrl({ url: coverURL, method: 'GET' });
           const buffer: ArrayBuffer = imgResult.arrayBuffer;
           await this.app.vault.createBinary(imagePath, buffer);
-          localCover = imagePath;
+          cover = imagePath;
         } catch (e) {
           console.warn('Cover download failed', e);
         }
@@ -170,8 +170,8 @@ export default class AuthorTodayImporter extends Plugin {
             .replace(/\{\{title\}\}/g, title)
             .replace(/\{\{author\}\}/g, author)
             .replace(/\{\{published\}\}/g, published)
+            .replace(/\{\{coverURL\}\}/g, coverURL)
             .replace(/\{\{cover\}\}/g, cover)
-            .replace(/\{\{localCover\}\}/g, localCover)
             .replace(/\{\{description\}\}/g, description)
             .replace(/\{\{category\}\}/g, category)
             .replace(/\{\{series\}\}/g, series)
@@ -187,8 +187,8 @@ export default class AuthorTodayImporter extends Plugin {
       }
       if (!content) {
         content = `---
-cover: "${localCover || cover}"
-localCover: "${localCover}"
+coverURL: "${coverURL}"
+cover: "${cover}"
 title: "${title}"
 author: "${author}"
 category: "${category}"
@@ -310,22 +310,22 @@ ${description}`;
       const fileName = title;
 
       // 10. Обложка
-      let cover = '';
+      let coverURL = '';
       const coverEl = doc.querySelector('img.book-cover__image') ?? doc.querySelector('img[src*="assets/books-covers/"]');
       if (coverEl) {
-        cover = coverEl.getAttribute('src') || '';
-        if (cover && cover.startsWith('//')) {
-          cover = 'https:' + cover;
+        coverURL = coverEl.getAttribute('src') || '';
+        if (coverURL && coverURL.startsWith('//')) {
+          coverURL = 'https:' + coverURL;
         }
       }
-      if (!cover) {
+      if (!coverURL) {
         const og = doc.querySelector('meta[property="og:image"]');
-        if (og) cover = og.getAttribute('content') || '';
+        if (og) coverURL = og.getAttribute('content') || '';
       }
 
       // 11. Скачать обложку локально
-      let localCover = '';
-      if (cover) {
+      let cover = '';
+      if (coverURL) {
         try {
           let baseImagePath = `${this.settings.coverFolder}/${fileName}`;
           let imagePath = `${baseImagePath}.jpg`;
@@ -334,10 +334,10 @@ ${description}`;
             imagePath = `${baseImagePath}_${imageCounter}.jpg`;
             imageCounter++;
           }
-          const imgResult = await requestUrl({ url: cover, method: 'GET' });
+          const imgResult = await requestUrl({ url: coverURL, method: 'GET' });
           const buffer: ArrayBuffer = imgResult.arrayBuffer;
           await this.app.vault.createBinary(imagePath, buffer);
-          localCover = imagePath;
+          cover = imagePath;
         } catch { /* ignore */ }
       }
 
@@ -365,8 +365,8 @@ ${description}`;
             .replace(/\{\{date\}\}/g, importDate)
             .replace(/\{\{title\}\}/g, title)
             .replace(/\{\{author\}\}/g, author)
+            .replace(/\{\{coverURL\}\}/g, coverURL)
             .replace(/\{\{cover\}\}/g, cover)
-            .replace(/\{\{localCover\}\}/g, localCover)
             .replace(/\{\{description\}\}/g, description)
             .replace(/\{\{category\}\}/g, category)
             .replace(/\{\{series\}\}/g, series)
@@ -388,8 +388,8 @@ author: "${author}"
 publisher: "${publisher}"
 published: "${published}"
 pages: "${pages}"
+coverURL: "${coverURL}"
 cover: "${cover}"
-localCover: "${localCover}"
 category: "${category}"
 series: "[[${series}]]"
 series_number: "${series_number}"
