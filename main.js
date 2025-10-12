@@ -28,6 +28,33 @@ class UrlPromptModal extends obsidian.Modal {
     onClose() { this.contentEl.empty(); }
 }
 class AuthorTodayImporter extends obsidian.Plugin {
+    sanitizeFileName(name) {
+        return name
+            .replace(/[\\\/:*?"<>|]/g, '') // удалить недопустимые символы
+            .replace(/[^\p{L}\p{N}\s\-\(\)]/gu, '') // оставить буквы, цифры, пробелы, дефисы и скобки
+            .trim()
+            .replace(/\s+/g, ' ') // схлопнуть пробелы
+            .substring(0, 100); // ограничить длину
+    }
+    // Вспомогательная функция для получения уникального пути с нужным расширением
+    async getUniquePath(basePath, ext) {
+        let path = `${basePath}.${ext}`;
+        let counter = 1;
+        // Проверка для файлов (заметки и обложки)
+        if (ext === 'md') {
+            while (this.app.vault.getAbstractFileByPath(path)) {
+                path = `${basePath}_${counter}.${ext}`;
+                counter++;
+            }
+        }
+        else {
+            while (await this.app.vault.adapter.exists(path)) {
+                path = `${basePath}_${counter}.${ext}`;
+                counter++;
+            }
+        }
+        return path;
+    }
     async onload() {
         await this.loadSettings();
         this.addCommand({
@@ -55,7 +82,7 @@ class AuthorTodayImporter extends obsidian.Plugin {
         }).open();
     }
     async importBook(url) {
-        var _a, _b, _c, _d, _e, _f, _g, _h;
+        var _a, _b, _c, _d, _e, _f, _g, _h, _j, _k;
         try {
             // Получить HTML страницы через API Obsidian
             const result = await obsidian.requestUrl({ url, method: 'GET' });
@@ -65,28 +92,31 @@ class AuthorTodayImporter extends obsidian.Plugin {
             // Вычислить дату импорта для {{date}}
             const importDate = new Date().toISOString().split('T')[0];
             // Извлечь метаданные
-            let title = ((_b = (_a = doc.querySelector('h1.work-page__title')) === null || _a === void 0 ? void 0 : _a.textContent) === null || _b === void 0 ? void 0 : _b.trim()) || '';
-            let author = ((_d = (_c = doc.querySelector('.work-page__author a')) === null || _c === void 0 ? void 0 : _c.textContent) === null || _d === void 0 ? void 0 : _d.trim()) || '';
-            if (!author) {
-                const parts = doc.title.split(' - ');
-                author = parts.length > 1 ? parts[1].trim() : '';
+            let title = ((_b = (_a = doc.querySelector('h1.book-title[itemprop="name"]')) === null || _a === void 0 ? void 0 : _a.textContent) === null || _b === void 0 ? void 0 : _b.trim()) ||
+                ((_d = (_c = doc.querySelector('h1.work-page__title')) === null || _c === void 0 ? void 0 : _c.textContent) === null || _d === void 0 ? void 0 : _d.trim()) || '';
+            // Новый способ извлечения автора: сначала meta[itemprop="name"], затем .work-page__author a
+            let author = '';
+            const metaAuthor = doc.querySelector('meta[itemprop="name"]');
+            if (metaAuthor) {
+                author = ((_e = metaAuthor.getAttribute('content')) === null || _e === void 0 ? void 0 : _e.trim()) || '';
             }
-            // Очистка
-            title = title.replace(/['":]/g, '').trim();
+            else {
+                const authorEl = doc.querySelector('.work-page__author a');
+                if (authorEl) {
+                    author = authorEl.textContent.trim();
+                }
+            }
+            // Очистка автора от кавычек и двоеточий
             author = author.replace(/['":]/g, '').trim();
+            // Очистка названия
+            title = title.replace(/['":]/g, '').trim();
             // Переменная published для {{published}}
             let published = '';
             const pubSpans = Array.from(doc.querySelectorAll('span.hint-top'));
             const dateEl = pubSpans.find(el => el.getAttribute('data-time'));
             if (dateEl) {
-                published = ((_e = dateEl.getAttribute('data-time')) === null || _e === void 0 ? void 0 : _e.split('T')[0]) || '';
+                published = ((_f = dateEl.getAttribute('data-time')) === null || _f === void 0 ? void 0 : _f.split('T')[0]) || '';
             }
-            // Очистить базовое имя файла (удалить спецсимволы, оставить пробелы)
-            const fileName = title.replace(/[^\p{L}\p{N}\s]/gu, '');
-            const coverMeta = doc.querySelector('meta[property="og:image"]');
-            const coverURL = (coverMeta === null || coverMeta === void 0 ? void 0 : coverMeta.getAttribute('content')) ||
-                ((_f = doc.querySelector('img.work-cover__image')) === null || _f === void 0 ? void 0 : _f.getAttribute('src')) || '';
-            const description = ((_g = doc.querySelector('meta[property="og:description"]')) === null || _g === void 0 ? void 0 : _g.getAttribute('content')) || '';
             // Жанры
             let category = '';
             const genreDiv = doc.querySelector('div.book-genres');
@@ -99,16 +129,23 @@ class AuthorTodayImporter extends obsidian.Plugin {
             const cycleLabel = Array.from(doc.querySelectorAll('span.text-muted'))
                 .find(el => el.textContent.trim().startsWith('Цикл'));
             if (cycleLabel) {
-                const linkEl = (_h = cycleLabel.parentElement) === null || _h === void 0 ? void 0 : _h.querySelector('a');
+                const container = cycleLabel.parentElement;
+                const linkEl = container === null || container === void 0 ? void 0 : container.querySelector('a');
                 if (linkEl) {
+                    // имя серии
                     series = linkEl.textContent.trim().replace(/['"]/g, '');
-                    const numMatch = linkEl.textContent.match(/#(\d+)/);
+                    // номер серии может быть в соседнем span после ссылки: "&nbsp;#7"
+                    let numMatch = (_h = (_g = linkEl.nextElementSibling) === null || _g === void 0 ? void 0 : _g.textContent) === null || _h === void 0 ? void 0 : _h.match(/#\s*(\d+)/);
+                    // если не нашли, попробуем по всему контейнеру
+                    if (!numMatch && (container === null || container === void 0 ? void 0 : container.textContent)) {
+                        numMatch = container.textContent.match(/#\s*(\d+)/);
+                    }
                     if (numMatch)
                         series_number = numMatch[1];
                 }
             }
-            // Удаляем кавычки, двоеточия и спецсимволы (дополнительно: /, |, !, ?)
-            series = series.replace(/['":\/|!?]/g, '').replace(/[^\p{L}\p{N}\s]/gu, '').trim();
+            // очистка серии от лишних символов (оставляем буквы/цифры/пробел/дефис/скобки)
+            series = series.replace(/['":\/|!?]/g, '').replace(/[^\p{L}\p{N}\s\-\(\)]/gu, '').trim();
             // Оценочное количество страниц
             let pages = '';
             const charsSpan = doc.querySelector('span.hint-top[data-hint^="Размер"]');
@@ -117,90 +154,31 @@ class AuthorTodayImporter extends obsidian.Plugin {
                 const count = parseInt(raw, 10);
                 pages = Math.ceil(count / 2000).toString();
             }
-            // Статус по умолчанию
+            // Статус по умолчанию и издатель
             const status = 'отложено';
             const publisher = 'АТ';
-            // Скачать обложку локально, всегда сохранять с уникальным именем при необходимости
-            let cover = '';
-            if (coverURL) {
-                try {
-                    let baseImagePath = `${this.settings.coverFolder}/${fileName}`;
-                    let imagePath = `${baseImagePath}.jpg`;
-                    let imageCounter = 1;
-                    while (await this.app.vault.adapter.exists(imagePath)) {
-                        imagePath = `${baseImagePath}_${imageCounter}.jpg`;
-                        imageCounter++;
-                    }
-                    const imgResult = await obsidian.requestUrl({ url: coverURL, method: 'GET' });
-                    const buffer = imgResult.arrayBuffer;
-                    await this.app.vault.createBinary(imagePath, buffer);
-                    cover = imagePath;
-                }
-                catch (e) {
-                    console.warn('Cover download failed', e);
-                }
-            }
-            // Уникальный путь к файлу
-            const basePath = `${this.settings.notesFolder}/${fileName}`;
-            let filePath = `${basePath}.md`;
-            let counter = 1;
-            // Добавлять суффикс только если файл с таким именем уже существует
-            while (this.app.vault.getAbstractFileByPath(filePath)) {
-                filePath = `${basePath}_${counter}.md`;
-                counter++;
-            }
-            // Создать содержимое через шаблон или по умолчанию
-            let content = '';
-            if (this.settings.templatePath) {
-                const tplFile = this.app.vault.getAbstractFileByPath(this.settings.templatePath);
-                if (tplFile instanceof obsidian.TFile) {
-                    let tpl = await this.app.vault.read(tplFile);
-                    tpl = tpl
-                        .replace(/\{\{date\}\}/g, importDate)
-                        .replace(/\{\{title\}\}/g, title)
-                        .replace(/\{\{author\}\}/g, author)
-                        .replace(/\{\{published\}\}/g, published)
-                        .replace(/\{\{coverURL\}\}/g, coverURL)
-                        .replace(/\{\{cover\}\}/g, cover)
-                        .replace(/\{\{description\}\}/g, description)
-                        .replace(/\{\{category\}\}/g, category)
-                        .replace(/\{\{series\}\}/g, series)
-                        .replace(/\{\{series_number\}\}/g, series_number)
-                        .replace(/\{\{pages\}\}/g, pages)
-                        .replace(/\{\{status\}\}/g, status)
-                        .replace(/\{\{publisher\}\}/g, publisher)
-                        .replace(/\{\{source\}\}/g, url);
-                    content = tpl;
-                }
-                else {
-                    new obsidian.Notice(`🔴 Template not found: ${this.settings.templatePath}`);
-                }
-            }
-            if (!content) {
-                content = `---
-coverURL: "${coverURL}"
-cover: "${cover}"
-title: "${title}"
-author: "${author}"
-category: "${category}"
-published: "${published}"
-source: "${url}"
-series: "${series}"
-serieslink: "[[${series}]]"
-series_number: "${series_number}"
-publisher: "${publisher}"
-pages: "${pages}"
-status: "${status}"
-date: "${importDate}"
----
-
-${description}`;
-            }
-            await this.app.vault.create(filePath, content);
-            new obsidian.Notice(`Imported "${title}"`);
-            const newFile = this.app.vault.getAbstractFileByPath(filePath);
-            if (newFile instanceof obsidian.TFile)
-                this.app.workspace.getLeaf(true).openFile(newFile);
+            // Обложка и описание
+            const coverMeta = doc.querySelector('meta[property="og:image"]');
+            const coverURL = (coverMeta === null || coverMeta === void 0 ? void 0 : coverMeta.getAttribute('content')) ||
+                ((_j = doc.querySelector('img.work-cover__image')) === null || _j === void 0 ? void 0 : _j.getAttribute('src')) || '';
+            const description = ((_k = doc.querySelector('meta[property="og:description"]')) === null || _k === void 0 ? void 0 : _k.getAttribute('content')) || '';
+            await this.createBookNote({
+                url,
+                title,
+                author,
+                published,
+                category,
+                series,
+                series_number,
+                pages,
+                status,
+                publisher,
+                coverURL,
+                description,
+                importDate,
+                source: url,
+                isYandex: false
+            });
         }
         catch (e) {
             console.error(e);
@@ -208,15 +186,12 @@ ${description}`;
         }
     }
     async importYandexBook(url) {
-        var _a, _b, _c, _d, _e;
+        var _a, _b, _c;
         try {
             const result = await obsidian.requestUrl({ url, method: 'GET' });
             const html = result.text;
             const parser = new DOMParser();
             const doc = parser.parseFromString(html, 'text/html');
-            console.log("Yandex page HTML:", doc.body.innerHTML.slice(0, 1000));
-            console.log("OG title:", (_a = doc.querySelector('meta[property="og:title"]')) === null || _a === void 0 ? void 0 : _a.getAttribute('content'));
-            console.log("OG desc:", (_b = doc.querySelector('meta[property="og:description"]')) === null || _b === void 0 ? void 0 : _b.getAttribute('content'));
             // Парсинг названия
             let title = '';
             const titleEl = doc.querySelector('[data-test-id="CONTENT_TITLE_MAIN"]');
@@ -224,7 +199,7 @@ ${description}`;
                 title = titleEl.textContent.trim();
             }
             else {
-                const ogTitle = (_d = (_c = doc.querySelector('meta[property="og:title"]')) === null || _c === void 0 ? void 0 : _c.getAttribute('content')) === null || _d === void 0 ? void 0 : _d.trim();
+                const ogTitle = (_b = (_a = doc.querySelector('meta[property="og:title"]')) === null || _a === void 0 ? void 0 : _a.getAttribute('content')) === null || _b === void 0 ? void 0 : _b.trim();
                 title = ogTitle
                     ? ogTitle.replace(/^Читать\s+/, '').replace(/\s+—.+$/, '').trim()
                     : 'Unknown Title';
@@ -289,12 +264,11 @@ ${description}`;
             }
             // 8. Статус по умолчанию
             const status = 'отложено';
-            // 9. Дата импорта и имя файла
+            // 9. Дата импорта
             const importDate = new Date().toISOString().split('T')[0];
-            const fileName = title;
             // 10. Обложка
             let coverURL = '';
-            const coverEl = (_e = doc.querySelector('img.book-cover__image')) !== null && _e !== void 0 ? _e : doc.querySelector('img[src*="assets/books-covers/"]');
+            const coverEl = (_c = doc.querySelector('img.book-cover__image')) !== null && _c !== void 0 ? _c : doc.querySelector('img[src*="assets/books-covers/"]');
             if (coverEl) {
                 coverURL = coverEl.getAttribute('src') || '';
                 if (coverURL && coverURL.startsWith('//')) {
@@ -306,93 +280,110 @@ ${description}`;
                 if (og)
                     coverURL = og.getAttribute('content') || '';
             }
-            // 11. Скачать обложку локально
-            let cover = '';
-            if (coverURL) {
-                try {
-                    let baseImagePath = `${this.settings.coverFolder}/${fileName}`;
-                    let imagePath = `${baseImagePath}.jpg`;
-                    let imageCounter = 1;
-                    while (await this.app.vault.adapter.exists(imagePath)) {
-                        imagePath = `${baseImagePath}_${imageCounter}.jpg`;
-                        imageCounter++;
-                    }
-                    const imgResult = await obsidian.requestUrl({ url: coverURL, method: 'GET' });
-                    const buffer = imgResult.arrayBuffer;
-                    await this.app.vault.createBinary(imagePath, buffer);
-                    cover = imagePath;
-                }
-                catch { /* ignore */ }
-            }
-            // 12. Обеспечить уникальность пути к файлу
-            const basePath = `${this.settings.notesFolder}/${fileName}`;
-            let filePath = `${basePath}.md`;
-            let counter = 1;
-            while (this.app.vault.getAbstractFileByPath(filePath)) {
-                filePath = `${basePath}_${counter}.md`;
-                counter++;
-            }
             // 13. Удалить кавычки из серии
             series = series.replace(/['":]/g, '').replace(/[^\p{L}\p{N}\s]/gu, '').trim();
             // 14. Использовать шаблон, если он задан
             // Переменная published для {{published}} (нет даты публикации у Yandex)
             const published = '';
-            let content = '';
-            if (this.settings.templatePath) {
-                const tplFile = this.app.vault.getAbstractFileByPath(this.settings.templatePath);
-                if (tplFile instanceof obsidian.TFile) {
-                    let tpl = await this.app.vault.read(tplFile);
-                    tpl = tpl
-                        .replace(/\{\{date\}\}/g, importDate)
-                        .replace(/\{\{title\}\}/g, title)
-                        .replace(/\{\{author\}\}/g, author)
-                        .replace(/\{\{coverURL\}\}/g, coverURL)
-                        .replace(/\{\{cover\}\}/g, cover)
-                        .replace(/\{\{description\}\}/g, description)
-                        .replace(/\{\{category\}\}/g, category)
-                        .replace(/\{\{series\}\}/g, series)
-                        .replace(/\{\{series_number\}\}/g, series_number)
-                        .replace(/\{\{pages\}\}/g, pages)
-                        .replace(/\{\{publisher\}\}/g, publisher)
-                        .replace(/\{\{status\}\}/g, status)
-                        .replace(/\{\{source\}\}/g, url)
-                        .replace(/\{\{published\}\}/g, published);
-                    content = tpl;
-                }
-                else {
-                    new obsidian.Notice(`🔴 Template not found: ${this.settings.templatePath}`);
-                }
-            }
-            if (!content) {
-                content = `---
-coverURL: "${coverURL}"
-cover: "${cover}"
-title: "${title}"
-author: "${author}"
-publisher: "${publisher}"
-published: "${published}"
-pages: "${pages}"
-category: "${category}"
-series: "${series}"
-serieslink: "[[${series}]]"
-series_number: "${series_number}"
-source: "${url}"
-date: "${importDate}"
-status: "${status}"
----
-
-${description}`;
-            }
-            await this.app.vault.create(filePath, content);
-            new obsidian.Notice(`Imported "${title}" from Yandex.Books`);
-            const file = this.app.vault.getAbstractFileByPath(filePath);
-            if (file instanceof obsidian.TFile)
-                this.app.workspace.getLeaf(true).openFile(file);
+            await this.createBookNote({
+                url,
+                title,
+                author,
+                published,
+                category,
+                series,
+                series_number,
+                pages,
+                status,
+                publisher,
+                coverURL,
+                description,
+                importDate,
+                source: url,
+                isYandex: true
+            });
         }
         catch (e) {
             console.error(e);
             new obsidian.Notice('Failed to import from Yandex.Books');
         }
+    }
+    // Вынесенная общая функция создания заметки по данным книги
+    async createBookNote(data) {
+        // Очистить базовое имя файла (удалить спецсимволы, оставить пробелы)
+        const fileName = this.sanitizeFileName(`${data.title} -- ${data.author}`);
+        // Скачать обложку локально, всегда сохранять с уникальным именем при необходимости
+        let cover = '';
+        if (data.coverURL) {
+            try {
+                const imagePath = await this.getUniquePath(`${this.settings.coverFolder}/${fileName}`, 'jpg');
+                const imgResult = await obsidian.requestUrl({ url: data.coverURL, method: 'GET' });
+                const buffer = imgResult.arrayBuffer;
+                await this.app.vault.createBinary(imagePath, buffer);
+                cover = imagePath;
+            }
+            catch (e) {
+                // ignore
+                console.warn('Cover download failed', e);
+            }
+        }
+        // Уникальный путь к файлу заметки
+        const filePath = await this.getUniquePath(`${this.settings.notesFolder}/${fileName}`, 'md');
+        // Создать содержимое через шаблон или по умолчанию
+        let content = '';
+        if (this.settings.templatePath) {
+            const tplFile = this.app.vault.getAbstractFileByPath(this.settings.templatePath);
+            if (tplFile instanceof obsidian.TFile) {
+                let tpl = await this.app.vault.read(tplFile);
+                tpl = tpl
+                    .replace(/\{\{date\}\}/g, data.importDate)
+                    .replace(/\{\{title\}\}/g, data.title)
+                    .replace(/\{\{author\}\}/g, data.author)
+                    .replace(/\{\{published\}\}/g, data.published)
+                    .replace(/\{\{coverURL\}\}/g, data.coverURL)
+                    .replace(/\{\{cover\}\}/g, cover)
+                    .replace(/\{\{description\}\}/g, data.description)
+                    .replace(/\{\{category\}\}/g, data.category)
+                    .replace(/\{\{series\}\}/g, data.series)
+                    .replace(/\{\{series_number\}\}/g, data.series_number)
+                    .replace(/\{\{pages\}\}/g, data.pages)
+                    .replace(/\{\{status\}\}/g, data.status)
+                    .replace(/\{\{publisher\}\}/g, data.publisher)
+                    .replace(/\{\{source\}\}/g, data.source);
+                content = tpl;
+            }
+            else {
+                new obsidian.Notice(`🔴 Template not found: ${this.settings.templatePath}`);
+            }
+        }
+        if (!content) {
+            content = `---
+
+title: "${data.title}"
+author: "${data.author}"
+category: "${data.category}"
+published: "${data.published}"
+source: "${data.source}"
+coverURL: "${data.coverURL}"
+cover: "${cover}"
+series: "${data.series}"
+serieslink: "[[${data.series}]]"
+series_number: "${data.series_number}"
+publisher: "${data.publisher}"
+pages: "${data.pages}"
+status: "${data.status}"
+date: "${data.importDate}"
+---
+
+${data.description}`;
+        }
+        await this.app.vault.create(filePath, content);
+        new obsidian.Notice(data.isYandex
+            ? `Imported "${data.title}" from Yandex.Books`
+            : `Imported "${data.title}"`);
+        const newFile = this.app.vault.getAbstractFileByPath(filePath);
+        if (newFile instanceof obsidian.TFile)
+            this.app.workspace.getLeaf(true).openFile(newFile);
     }
     onunload() { }
     async loadSettings() {

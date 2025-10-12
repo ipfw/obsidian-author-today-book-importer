@@ -102,15 +102,24 @@ export default class AuthorTodayImporter extends Plugin {
       const importDate = new Date().toISOString().split('T')[0];
 
       // Извлечь метаданные
-      let title = doc.querySelector('h1.work-page__title')?.textContent?.trim() || '';
-      let author = doc.querySelector('.work-page__author a')?.textContent?.trim() || '';
-      if (!author) {
-        const parts = doc.title.split(' - ');
-        author = parts.length > 1 ? parts[1].trim() : '';
+      let title = doc.querySelector('h1.book-title[itemprop="name"]')?.textContent?.trim() ||
+                  doc.querySelector('h1.work-page__title')?.textContent?.trim() || '';
+
+      // Новый способ извлечения автора: сначала meta[itemprop="name"], затем .work-page__author a
+      let author = '';
+      const metaAuthor = doc.querySelector('meta[itemprop="name"]');
+      if (metaAuthor) {
+        author = metaAuthor.getAttribute('content')?.trim() || '';
+      } else {
+        const authorEl = doc.querySelector('.work-page__author a');
+        if (authorEl) {
+          author = authorEl.textContent.trim();
+        }
       }
-      // Очистка
-      title = title.replace(/['":]/g, '').trim();
+      // Очистка автора от кавычек и двоеточий
       author = author.replace(/['":]/g, '').trim();
+      // Очистка названия
+      title = title.replace(/['":]/g, '').trim();
 
       // Переменная published для {{published}}
       let published = '';
@@ -131,15 +140,22 @@ export default class AuthorTodayImporter extends Plugin {
       const cycleLabel = Array.from(doc.querySelectorAll('span.text-muted'))
         .find(el => el.textContent.trim().startsWith('Цикл'));
       if (cycleLabel) {
-        const linkEl = cycleLabel.parentElement?.querySelector('a');
+        const container = cycleLabel.parentElement as HTMLElement | null;
+        const linkEl = container?.querySelector('a') as HTMLAnchorElement | null;
         if (linkEl) {
+          // имя серии
           series = linkEl.textContent.trim().replace(/['"]/g, '');
-          const numMatch = linkEl.textContent.match(/#(\d+)/);
+          // номер серии может быть в соседнем span после ссылки: "&nbsp;#7"
+          let numMatch = (linkEl.nextElementSibling as HTMLElement | null)?.textContent?.match(/#\s*(\d+)/);
+          // если не нашли, попробуем по всему контейнеру
+          if (!numMatch && container?.textContent) {
+            numMatch = container.textContent.match(/#\s*(\d+)/);
+          }
           if (numMatch) series_number = numMatch[1];
         }
       }
-      // Удаляем кавычки, двоеточия и спецсимволы (дополнительно: /, |, !, ?)
-      series = series.replace(/['":\/|!?]/g, '').replace(/[^\p{L}\p{N}\s]/gu, '').trim();
+      // очистка серии от лишних символов (оставляем буквы/цифры/пробел/дефис/скобки)
+      series = series.replace(/['":\/|!?]/g, '').replace(/[^\p{L}\p{N}\s\-\(\)]/gu, '').trim();
 
       // Оценочное количество страниц
       let pages = '';
