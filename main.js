@@ -15,10 +15,10 @@ class UrlPromptModal extends obsidian.Modal {
     }
     onOpen() {
         const { contentEl } = this;
-        contentEl.createEl('h2', { text: 'Enter book URL' });
+        contentEl.createEl('h2', { text: 'Введите URL книги (author.today или Яндекс.книги):' });
         const input = contentEl.createEl('input', { type: 'text' });
         input.style.width = '100%';
-        const submit = contentEl.createEl('button', { text: 'Import' });
+        const submit = contentEl.createEl('button', { text: 'Добавить' });
         submit.style.marginTop = '10px';
         submit.onclick = () => { const url = input.value.trim(); this.close(); this.promptResult(url); };
         input.focus();
@@ -40,7 +40,7 @@ class AuthorTodayImporter extends obsidian.Plugin {
     openPromptAuto() {
         new UrlPromptModal(this.app, (url) => {
             if (!url) {
-                new obsidian.Notice('No URL provided');
+                new obsidian.Notice('Некорректный URL');
                 return;
             }
             if (url.includes('author.today')) {
@@ -50,12 +50,12 @@ class AuthorTodayImporter extends obsidian.Plugin {
                 this.importYandexBook(url);
             }
             else {
-                new obsidian.Notice('Unsupported book source');
+                new obsidian.Notice('Неизвестный ресурс');
             }
         }).open();
     }
     async importBook(url) {
-        var _a, _b, _c, _d, _e, _f, _g, _h, _j;
+        var _a, _b, _c, _d, _e, _f, _g, _h;
         try {
             // Получить HTML страницы через API Obsidian
             const result = await obsidian.requestUrl({ url, method: 'GET' });
@@ -66,23 +66,27 @@ class AuthorTodayImporter extends obsidian.Plugin {
             const importDate = new Date().toISOString().split('T')[0];
             // Извлечь метаданные
             let title = ((_b = (_a = doc.querySelector('h1.work-page__title')) === null || _a === void 0 ? void 0 : _a.textContent) === null || _b === void 0 ? void 0 : _b.trim()) || '';
-            if (!title)
-                title = ((_c = doc.title.split(' - ')[0]) === null || _c === void 0 ? void 0 : _c.trim()) || 'Unknown Title';
-            // Удалить кавычки, двоеточия и специальные символы из названия
-            title = title.replace(/['":]/g, '').replace(/[^\p{L}\p{N}\s]/gu, '').trim();
-            let author = ((_e = (_d = doc.querySelector('.work-page__author a')) === null || _d === void 0 ? void 0 : _d.textContent) === null || _e === void 0 ? void 0 : _e.trim()) || '';
-            if (!author)
-                author = ((_f = doc.title.split(' - ')[1]) === null || _f === void 0 ? void 0 : _f.trim()) || '';
+            let author = ((_d = (_c = doc.querySelector('.work-page__author a')) === null || _c === void 0 ? void 0 : _c.textContent) === null || _d === void 0 ? void 0 : _d.trim()) || '';
+            if (!author) {
+                const parts = doc.title.split(' - ');
+                author = parts.length > 1 ? parts[1].trim() : '';
+            }
+            // Очистка
+            title = title.replace(/['":]/g, '').trim();
+            author = author.replace(/['":]/g, '').trim();
             // Переменная published для {{published}}
             let published = '';
-            const pubSpan = doc.querySelector('span.hint-top[data-time]');
-            if (pubSpan) {
-                published = ((_g = pubSpan.getAttribute('data-time')) === null || _g === void 0 ? void 0 : _g.split('T')[0]) || '';
+            const pubSpans = Array.from(doc.querySelectorAll('span.hint-top'));
+            const dateEl = pubSpans.find(el => el.getAttribute('data-time'));
+            if (dateEl) {
+                published = ((_e = dateEl.getAttribute('data-time')) === null || _e === void 0 ? void 0 : _e.split('T')[0]) || '';
             }
             // Очистить базовое имя файла (удалить спецсимволы, оставить пробелы)
-            const fileName = title;
-            const coverURL = ((_h = doc.querySelector('meta[property="og:image"]')) === null || _h === void 0 ? void 0 : _h.getAttribute('content')) || '';
-            const description = ((_j = doc.querySelector('meta[property="og:description"]')) === null || _j === void 0 ? void 0 : _j.getAttribute('content')) || '';
+            const fileName = title.replace(/[^\p{L}\p{N}\s]/gu, '');
+            const coverMeta = doc.querySelector('meta[property="og:image"]');
+            const coverURL = (coverMeta === null || coverMeta === void 0 ? void 0 : coverMeta.getAttribute('content')) ||
+                ((_f = doc.querySelector('img.work-cover__image')) === null || _f === void 0 ? void 0 : _f.getAttribute('src')) || '';
+            const description = ((_g = doc.querySelector('meta[property="og:description"]')) === null || _g === void 0 ? void 0 : _g.getAttribute('content')) || '';
             // Жанры
             let category = '';
             const genreDiv = doc.querySelector('div.book-genres');
@@ -95,16 +99,16 @@ class AuthorTodayImporter extends obsidian.Plugin {
             const cycleLabel = Array.from(doc.querySelectorAll('span.text-muted'))
                 .find(el => el.textContent.trim().startsWith('Цикл'));
             if (cycleLabel) {
-                const linkEl = cycleLabel.nextElementSibling;
+                const linkEl = (_h = cycleLabel.parentElement) === null || _h === void 0 ? void 0 : _h.querySelector('a');
                 if (linkEl) {
                     series = linkEl.textContent.trim().replace(/['"]/g, '');
-                    const numEl = linkEl.nextElementSibling;
-                    const m = numEl === null || numEl === void 0 ? void 0 : numEl.textContent.match(/#(\d+)/);
-                    if (m)
-                        series_number = m[1];
+                    const numMatch = linkEl.textContent.match(/#(\d+)/);
+                    if (numMatch)
+                        series_number = numMatch[1];
                 }
             }
-            series = series.replace(/['":]/g, '').replace(/[^\p{L}\p{N}\s]/gu, '').trim();
+            // Удаляем кавычки, двоеточия и спецсимволы (дополнительно: /, |, !, ?)
+            series = series.replace(/['":\/|!?]/g, '').replace(/[^\p{L}\p{N}\s]/gu, '').trim();
             // Оценочное количество страниц
             let pages = '';
             const charsSpan = doc.querySelector('span.hint-top[data-hint^="Размер"]');

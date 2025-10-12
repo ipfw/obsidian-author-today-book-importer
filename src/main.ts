@@ -36,6 +36,34 @@ class UrlPromptModal extends Modal {
 export default class AuthorTodayImporter extends Plugin {
   settings: ImporterSettings;
 
+  sanitizeFileName(name: string): string {
+    return name
+      .replace(/[\\\/:*?"<>|]/g, '')  // удалить недопустимые символы
+      .replace(/[^\p{L}\p{N}\s\-\(\)]/gu, '') // оставить буквы, цифры, пробелы, дефисы и скобки
+      .trim()
+      .replace(/\s+/g, ' ')            // схлопнуть пробелы
+      .substring(0, 100);              // ограничить длину
+  }
+
+  // Вспомогательная функция для получения уникального пути с нужным расширением
+  async getUniquePath(basePath: string, ext: string): Promise<string> {
+    let path = `${basePath}.${ext}`;
+    let counter = 1;
+    // Проверка для файлов (заметки и обложки)
+    if (ext === 'md') {
+      while (this.app.vault.getAbstractFileByPath(path)) {
+        path = `${basePath}_${counter}.${ext}`;
+        counter++;
+      }
+    } else {
+      while (await this.app.vault.adapter.exists(path)) {
+        path = `${basePath}_${counter}.${ext}`;
+        counter++;
+      }
+    }
+    return path;
+  }
+
   async onload() {
     await this.loadSettings();
     this.addCommand({
@@ -86,16 +114,11 @@ export default class AuthorTodayImporter extends Plugin {
 
       // Переменная published для {{published}}
       let published = '';
-      const pubSpan = doc.querySelector('span.hint-top[data-time]');
-      if (pubSpan) {
-        published = pubSpan.getAttribute('data-time')?.split('T')[0] || '';
+      const pubSpans = Array.from(doc.querySelectorAll('span.hint-top'));
+      const dateEl = pubSpans.find(el => el.getAttribute('data-time'));
+      if (dateEl) {
+        published = dateEl.getAttribute('data-time')?.split('T')[0] || '';
       }
-      // Очистить базовое имя файла (удалить спецсимволы, оставить пробелы)
-      const fileName = title.replace(/[^\p{L}\p{N}\s]/gu, '');
-
-      const coverURL = doc.querySelector('meta[property="og:image"]')?.getAttribute('content') || '';
-      const description = doc.querySelector('meta[property="og:description"]')?.getAttribute('content') || '';
-
       // Жанры
       let category = '';
       const genreDiv = doc.querySelector('div.book-genres');
@@ -108,12 +131,11 @@ export default class AuthorTodayImporter extends Plugin {
       const cycleLabel = Array.from(doc.querySelectorAll('span.text-muted'))
         .find(el => el.textContent.trim().startsWith('Цикл'));
       if (cycleLabel) {
-        const linkEl = cycleLabel.nextElementSibling as HTMLAnchorElement;
+        const linkEl = cycleLabel.parentElement?.querySelector('a');
         if (linkEl) {
           series = linkEl.textContent.trim().replace(/['"]/g, '');
-          const numEl = linkEl.nextElementSibling as HTMLElement;
-          const m = numEl?.textContent.match(/#(\d+)/);
-          if (m) series_number = m[1];
+          const numMatch = linkEl.textContent.match(/#(\d+)/);
+          if (numMatch) series_number = numMatch[1];
         }
       }
       // Удаляем кавычки, двоеточия и спецсимволы (дополнительно: /, |, !, ?)
@@ -128,92 +150,33 @@ export default class AuthorTodayImporter extends Plugin {
         pages = Math.ceil(count / 2000).toString();
       }
 
-      // Статус по умолчанию
+      // Статус по умолчанию и издатель
       const status = 'отложено';
       const publisher = 'АТ';
 
-      // Скачать обложку локально, всегда сохранять с уникальным именем при необходимости
-      let cover = '';
-      if (coverURL) {
-        try {
-          let baseImagePath = `${this.settings.coverFolder}/${fileName}`;
-          let imagePath = `${baseImagePath}.jpg`;
-          let imageCounter = 1;
-          while (await this.app.vault.adapter.exists(imagePath)) {
-            imagePath = `${baseImagePath}_${imageCounter}.jpg`;
-            imageCounter++;
-          }
-          const imgResult = await requestUrl({ url: coverURL, method: 'GET' });
-          const buffer: ArrayBuffer = imgResult.arrayBuffer;
-          await this.app.vault.createBinary(imagePath, buffer);
-          cover = imagePath;
-        } catch (e) {
-          console.warn('Cover download failed', e);
-        }
-      }
+      // Обложка и описание
+      const coverMeta = doc.querySelector('meta[property="og:image"]');
+      const coverURL = coverMeta?.getAttribute('content') ||
+        doc.querySelector('img.work-cover__image')?.getAttribute('src') || '';
+      const description = doc.querySelector('meta[property="og:description"]')?.getAttribute('content') || '';
 
-      // Уникальный путь к файлу
-      const basePath = `${this.settings.notesFolder}/${fileName}`;
-      let filePath = `${basePath}.md`;
-      let counter = 1;
-      // Добавлять суффикс только если файл с таким именем уже существует
-      while (this.app.vault.getAbstractFileByPath(filePath)) {
-        filePath = `${basePath}_${counter}.md`;
-        counter++;
-      }
-
-      // Создать содержимое через шаблон или по умолчанию
-      let content = '';
-      if (this.settings.templatePath) {
-        const tplFile = this.app.vault.getAbstractFileByPath(this.settings.templatePath);
-        if (tplFile instanceof TFile) {
-          let tpl = await this.app.vault.read(tplFile);
-          tpl = tpl
-            .replace(/\{\{date\}\}/g, importDate)
-            .replace(/\{\{title\}\}/g, title)
-            .replace(/\{\{author\}\}/g, author)
-            .replace(/\{\{published\}\}/g, published)
-            .replace(/\{\{coverURL\}\}/g, coverURL)
-            .replace(/\{\{cover\}\}/g, cover)
-            .replace(/\{\{description\}\}/g, description)
-            .replace(/\{\{category\}\}/g, category)
-            .replace(/\{\{series\}\}/g, series)
-            .replace(/\{\{series_number\}\}/g, series_number)
-            .replace(/\{\{pages\}\}/g, pages)
-            .replace(/\{\{status\}\}/g, status)
-            .replace(/\{\{publisher\}\}/g, publisher)
-            .replace(/\{\{source\}\}/g, url);
-          content = tpl;
-        } else {
-          new Notice(`🔴 Template not found: ${this.settings.templatePath}`);
-        }
-      }
-      if (!content) {
-        content = `---
-coverURL: "${coverURL}"
-cover: "${cover}"
-title: "${title}"
-author: "${author}"
-category: "${category}"
-published: "${published}"
-source: "${url}"
-series: "${series}"
-serieslink: "[[${series}]]"
-series_number: "${series_number}"
-publisher: "${publisher}"
-pages: "${pages}"
-status: "${status}"
-date: "${importDate}"
----
-
-${description}`;
-      }
-
-      await this.app.vault.create(filePath, content);
-      new Notice(`Imported "${title}"`);
-      const newFile = this.app.vault.getAbstractFileByPath(filePath);
-      if (newFile instanceof TFile) this.app.workspace.getLeaf(true).openFile(newFile);
-
+      await this.createBookNote({
+        url,
+        title,
+        author,
+        published,
+        category,
+        series,
+        series_number,
+        pages,
+        status,
+        publisher,
+        coverURL,
+        description,
+        importDate,
+        source: url,
+        isYandex: false
+      });
     } catch (e) {
       console.error(e);
       new Notice('Failed to import book');
@@ -226,10 +189,6 @@ ${description}`;
       const html = result.text;
       const parser = new DOMParser();
       const doc = parser.parseFromString(html, 'text/html');
-      console.log("Yandex page HTML:", doc.body.innerHTML.slice(0, 1000));
-      console.log("OG title:", doc.querySelector('meta[property="og:title"]')?.getAttribute('content'));
-      console.log("OG desc:", doc.querySelector('meta[property="og:description"]')?.getAttribute('content'));
-
       // Парсинг названия
       let title = '';
       const titleEl = doc.querySelector('[data-test-id="CONTENT_TITLE_MAIN"]');
@@ -308,9 +267,8 @@ ${description}`;
       // 8. Статус по умолчанию
       const status = 'отложено';
 
-      // 9. Дата импорта и имя файла
+      // 9. Дата импорта
       const importDate = new Date().toISOString().split('T')[0];
-      const fileName = title;
 
       // 10. Обложка
       let coverURL = '';
@@ -326,93 +284,127 @@ ${description}`;
         if (og) coverURL = og.getAttribute('content') || '';
       }
 
-      // 11. Скачать обложку локально
-      let cover = '';
-      if (coverURL) {
-        try {
-          let baseImagePath = `${this.settings.coverFolder}/${fileName}`;
-          let imagePath = `${baseImagePath}.jpg`;
-          let imageCounter = 1;
-          while (await this.app.vault.adapter.exists(imagePath)) {
-            imagePath = `${baseImagePath}_${imageCounter}.jpg`;
-            imageCounter++;
-          }
-          const imgResult = await requestUrl({ url: coverURL, method: 'GET' });
-          const buffer: ArrayBuffer = imgResult.arrayBuffer;
-          await this.app.vault.createBinary(imagePath, buffer);
-          cover = imagePath;
-        } catch { /* ignore */ }
-      }
-
-      // 12. Обеспечить уникальность пути к файлу
-      const basePath = `${this.settings.notesFolder}/${fileName}`;
-      let filePath = `${basePath}.md`;
-      let counter = 1;
-      while (this.app.vault.getAbstractFileByPath(filePath)) {
-        filePath = `${basePath}_${counter}.md`;
-        counter++;
-      }
-
       // 13. Удалить кавычки из серии
       series = series.replace(/['":]/g, '').replace(/[^\p{L}\p{N}\s]/gu, '').trim();
 
       // 14. Использовать шаблон, если он задан
       // Переменная published для {{published}} (нет даты публикации у Yandex)
       const published = '';
-      let content = '';
-      if (this.settings.templatePath) {
-        const tplFile = this.app.vault.getAbstractFileByPath(this.settings.templatePath);
-        if (tplFile instanceof TFile) {
-          let tpl = await this.app.vault.read(tplFile);
-          tpl = tpl
-            .replace(/\{\{date\}\}/g, importDate)
-            .replace(/\{\{title\}\}/g, title)
-            .replace(/\{\{author\}\}/g, author)
-            .replace(/\{\{coverURL\}\}/g, coverURL)
-            .replace(/\{\{cover\}\}/g, cover)
-            .replace(/\{\{description\}\}/g, description)
-            .replace(/\{\{category\}\}/g, category)
-            .replace(/\{\{series\}\}/g, series)
-            .replace(/\{\{series_number\}\}/g, series_number)
-            .replace(/\{\{pages\}\}/g, pages)
-            .replace(/\{\{publisher\}\}/g, publisher)
-            .replace(/\{\{status\}\}/g, status)
-            .replace(/\{\{source\}\}/g, url)
-            .replace(/\{\{published\}\}/g, published);
-          content = tpl;
-        } else {
-          new Notice(`🔴 Template not found: ${this.settings.templatePath}`);
-        }
-      }
-      if (!content) {
-        content = `---
-coverURL: "${coverURL}"
-cover: "${cover}"
-title: "${title}"
-author: "${author}"
-publisher: "${publisher}"
-published: "${published}"
-pages: "${pages}"
-category: "${category}"
-series: "${series}"
-serieslink: "[[${series}]]"
-series_number: "${series_number}"
-source: "${url}"
-date: "${importDate}"
-status: "${status}"
----
 
-${description}`;
-      }
-
-      await this.app.vault.create(filePath, content);
-      new Notice(`Imported "${title}" from Yandex.Books`);
-      const file = this.app.vault.getAbstractFileByPath(filePath);
-      if (file instanceof TFile) this.app.workspace.getLeaf(true).openFile(file);
+      await this.createBookNote({
+        url,
+        title,
+        author,
+        published,
+        category,
+        series,
+        series_number,
+        pages,
+        status,
+        publisher,
+        coverURL,
+        description,
+        importDate,
+        source: url,
+        isYandex: true
+      });
     } catch (e) {
       console.error(e);
       new Notice('Failed to import from Yandex.Books');
     }
+  }
+
+  // Вынесенная общая функция создания заметки по данным книги
+  private async createBookNote(data: {
+    url: string;
+    title: string;
+    author: string;
+    published: string;
+    category: string;
+    series: string;
+    series_number: string;
+    pages: string;
+    status: string;
+    publisher: string;
+    coverURL: string;
+    description: string;
+    importDate: string;
+    source: string;
+    isYandex: boolean;
+  }) {
+    // Очистить базовое имя файла (удалить спецсимволы, оставить пробелы)
+    const fileName = this.sanitizeFileName(`${data.title} -- ${data.author}`);
+    // Скачать обложку локально, всегда сохранять с уникальным именем при необходимости
+    let cover = '';
+    if (data.coverURL) {
+      try {
+        const imagePath = await this.getUniquePath(`${this.settings.coverFolder}/${fileName}`, 'jpg');
+        const imgResult = await requestUrl({ url: data.coverURL, method: 'GET' });
+        const buffer: ArrayBuffer = imgResult.arrayBuffer;
+        await this.app.vault.createBinary(imagePath, buffer);
+        cover = imagePath;
+      } catch (e) {
+        // ignore
+        console.warn('Cover download failed', e);
+      }
+    }
+    // Уникальный путь к файлу заметки
+    const filePath = await this.getUniquePath(`${this.settings.notesFolder}/${fileName}`, 'md');
+    // Создать содержимое через шаблон или по умолчанию
+    let content = '';
+    if (this.settings.templatePath) {
+      const tplFile = this.app.vault.getAbstractFileByPath(this.settings.templatePath);
+      if (tplFile instanceof TFile) {
+        let tpl = await this.app.vault.read(tplFile);
+        tpl = tpl
+          .replace(/\{\{date\}\}/g, data.importDate)
+          .replace(/\{\{title\}\}/g, data.title)
+          .replace(/\{\{author\}\}/g, data.author)
+          .replace(/\{\{published\}\}/g, data.published)
+          .replace(/\{\{coverURL\}\}/g, data.coverURL)
+          .replace(/\{\{cover\}\}/g, cover)
+          .replace(/\{\{description\}\}/g, data.description)
+          .replace(/\{\{category\}\}/g, data.category)
+          .replace(/\{\{series\}\}/g, data.series)
+          .replace(/\{\{series_number\}\}/g, data.series_number)
+          .replace(/\{\{pages\}\}/g, data.pages)
+          .replace(/\{\{status\}\}/g, data.status)
+          .replace(/\{\{publisher\}\}/g, data.publisher)
+          .replace(/\{\{source\}\}/g, data.source);
+        content = tpl;
+      } else {
+        new Notice(`🔴 Template not found: ${this.settings.templatePath}`);
+      }
+    }
+    if (!content) {
+      content = `---
+
+title: "${data.title}"
+author: "${data.author}"
+category: "${data.category}"
+published: "${data.published}"
+source: "${data.source}"
+coverURL: "${data.coverURL}"
+cover: "${cover}"
+series: "${data.series}"
+serieslink: "[[${data.series}]]"
+series_number: "${data.series_number}"
+publisher: "${data.publisher}"
+pages: "${data.pages}"
+status: "${data.status}"
+date: "${data.importDate}"
+---
+
+${data.description}`;
+    }
+    await this.app.vault.create(filePath, content);
+    new Notice(
+      data.isYandex
+        ? `Imported "${data.title}" from Yandex.Books`
+        : `Imported "${data.title}"`
+    );
+    const newFile = this.app.vault.getAbstractFileByPath(filePath);
+    if (newFile instanceof TFile) this.app.workspace.getLeaf(true).openFile(newFile);
   }
 
   onunload() {}
