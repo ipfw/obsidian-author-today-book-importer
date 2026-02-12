@@ -4,12 +4,16 @@ interface ImporterSettings {
   notesFolder: string;
   templatePath: string;
   coverFolder: string;
+  authorTodayCookie: string;
+  authorTodayUserAgent: string;
 }
 
 const DEFAULT_SETTINGS: ImporterSettings = {
   notesFolder: 'Books',
   templatePath: '',
-  coverFolder: 'images'
+  coverFolder: 'images',
+  authorTodayCookie: '',
+  authorTodayUserAgent: 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 Safari/537.36'
 };
 
 // Модальное окно для ввода URL
@@ -92,8 +96,25 @@ export default class AuthorTodayImporter extends Plugin {
 
   async importBook(url: string) {
     try {
-      // Получить HTML страницы через API Obsidian
-      const result = await requestUrl({ url, method: 'GET' });
+      const headers: Record<string, string> = {
+        'User-Agent': this.settings.authorTodayUserAgent || 'Mozilla/5.0',
+        'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+        'Accept-Language': 'ru-RU,ru;q=0.9,en;q=0.8',
+        'Cache-Control': 'no-cache',
+        'Pragma': 'no-cache',
+        'Referer': url,
+      };
+
+      // Если author.today отдает 403 (часто Cloudflare/антибот), можно передать Cookie из браузера
+      if (this.settings.authorTodayCookie && this.settings.authorTodayCookie.trim()) {
+        headers['Cookie'] = this.settings.authorTodayCookie.trim();
+      }
+
+      const result = await requestUrl({
+        url,
+        method: 'GET',
+        headers,
+      });
       const html = result.text;
       const parser = new DOMParser();
       const doc = parser.parseFromString(html, 'text/html');
@@ -194,8 +215,16 @@ export default class AuthorTodayImporter extends Plugin {
         isYandex: false
       });
     } catch (e) {
-      console.error(e);
-      new Notice('Failed to import book');
+      const anyErr = e as any;
+      const status = anyErr?.status ?? anyErr?.response?.status;
+      const msg = anyErr?.message ? String(anyErr.message) : String(e);
+      console.error('AuthorToday import error', { status, msg, e });
+
+      if (status === 403) {
+        new Notice('Author.Today вернул 403 (блокировка/антибот). Попробуй указать Cookie в настройках плагина или открыть страницу в браузере и проверить доступ.');
+      } else {
+        new Notice(`Failed to import book${status ? ` (status ${status})` : ''}`);
+      }
     }
   }
 
@@ -458,5 +487,31 @@ class ImporterSettingTab extends PluginSettingTab {
       .setDesc('Folder where cover images will be saved')
       .addText(text => text.setPlaceholder('images').setValue(this.plugin.settings.coverFolder)
         .onChange(async v => { this.plugin.settings.coverFolder = v; await this.plugin.saveSettings(); }));
+
+    new Setting(containerEl)
+      .setName('Author.Today Cookie (optional)')
+      .setDesc('Вставь Cookie из браузера (только если Author.Today возвращает 403). Хранится локально в настройках Obsidian.')
+      .addTextArea(text =>
+        text
+          .setPlaceholder('cf_clearance=...; session=...')
+          .setValue(this.plugin.settings.authorTodayCookie)
+          .onChange(async v => {
+            this.plugin.settings.authorTodayCookie = v;
+            await this.plugin.saveSettings();
+          })
+      );
+
+    new Setting(containerEl)
+      .setName('Author.Today User-Agent')
+      .setDesc('User-Agent для запроса страницы (иногда помогает обойти 403).')
+      .addText(text =>
+        text
+          .setPlaceholder('Mozilla/5.0 ...')
+          .setValue(this.plugin.settings.authorTodayUserAgent)
+          .onChange(async v => {
+            this.plugin.settings.authorTodayUserAgent = v;
+            await this.plugin.saveSettings();
+          })
+      );
   }
 }

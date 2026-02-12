@@ -5,7 +5,9 @@ var obsidian = require('obsidian');
 const DEFAULT_SETTINGS = {
     notesFolder: 'Books',
     templatePath: '',
-    coverFolder: 'images'
+    coverFolder: 'images',
+    authorTodayCookie: '',
+    authorTodayUserAgent: 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 Safari/537.36'
 };
 // Модальное окно для ввода URL
 class UrlPromptModal extends obsidian.Modal {
@@ -82,10 +84,25 @@ class AuthorTodayImporter extends obsidian.Plugin {
         }).open();
     }
     async importBook(url) {
-        var _a, _b, _c, _d, _e, _f, _g, _h, _j, _k;
+        var _a, _b, _c, _d, _e, _f, _g, _h, _j, _k, _l, _m;
         try {
-            // Получить HTML страницы через API Obsidian
-            const result = await obsidian.requestUrl({ url, method: 'GET' });
+            const headers = {
+                'User-Agent': this.settings.authorTodayUserAgent || 'Mozilla/5.0',
+                'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+                'Accept-Language': 'ru-RU,ru;q=0.9,en;q=0.8',
+                'Cache-Control': 'no-cache',
+                'Pragma': 'no-cache',
+                'Referer': url,
+            };
+            // Если author.today отдает 403 (часто Cloudflare/антибот), можно передать Cookie из браузера
+            if (this.settings.authorTodayCookie && this.settings.authorTodayCookie.trim()) {
+                headers['Cookie'] = this.settings.authorTodayCookie.trim();
+            }
+            const result = await obsidian.requestUrl({
+                url,
+                method: 'GET',
+                headers,
+            });
             const html = result.text;
             const parser = new DOMParser();
             const doc = parser.parseFromString(html, 'text/html');
@@ -181,8 +198,16 @@ class AuthorTodayImporter extends obsidian.Plugin {
             });
         }
         catch (e) {
-            console.error(e);
-            new obsidian.Notice('Failed to import book');
+            const anyErr = e;
+            const status = (_l = anyErr === null || anyErr === void 0 ? void 0 : anyErr.status) !== null && _l !== void 0 ? _l : (_m = anyErr === null || anyErr === void 0 ? void 0 : anyErr.response) === null || _m === void 0 ? void 0 : _m.status;
+            const msg = (anyErr === null || anyErr === void 0 ? void 0 : anyErr.message) ? String(anyErr.message) : String(e);
+            console.error('AuthorToday import error', { status, msg, e });
+            if (status === 403) {
+                new obsidian.Notice('Author.Today вернул 403 (блокировка/антибот). Попробуй указать Cookie в настройках плагина или открыть страницу в браузере и проверить доступ.');
+            }
+            else {
+                new obsidian.Notice(`Failed to import book${status ? ` (status ${status})` : ''}`);
+            }
         }
     }
     async importYandexBook(url) {
@@ -416,6 +441,26 @@ class ImporterSettingTab extends obsidian.PluginSettingTab {
             .setDesc('Folder where cover images will be saved')
             .addText(text => text.setPlaceholder('images').setValue(this.plugin.settings.coverFolder)
             .onChange(async (v) => { this.plugin.settings.coverFolder = v; await this.plugin.saveSettings(); }));
+        new obsidian.Setting(containerEl)
+            .setName('Author.Today Cookie (optional)')
+            .setDesc('Вставь Cookie из браузера (только если Author.Today возвращает 403). Хранится локально в настройках Obsidian.')
+            .addTextArea(text => text
+            .setPlaceholder('cf_clearance=...; session=...')
+            .setValue(this.plugin.settings.authorTodayCookie)
+            .onChange(async (v) => {
+            this.plugin.settings.authorTodayCookie = v;
+            await this.plugin.saveSettings();
+        }));
+        new obsidian.Setting(containerEl)
+            .setName('Author.Today User-Agent')
+            .setDesc('User-Agent для запроса страницы (иногда помогает обойти 403).')
+            .addText(text => text
+            .setPlaceholder('Mozilla/5.0 ...')
+            .setValue(this.plugin.settings.authorTodayUserAgent)
+            .onChange(async (v) => {
+            this.plugin.settings.authorTodayUserAgent = v;
+            await this.plugin.saveSettings();
+        }));
     }
 }
 
