@@ -38,7 +38,7 @@ class UrlPromptModal extends Modal {
 }
 
 export default class AuthorTodayImporter extends Plugin {
-  settings: ImporterSettings;
+  settings: ImporterSettings = DEFAULT_SETTINGS;
 
   sanitizeFileName(name: string): string {
     return name

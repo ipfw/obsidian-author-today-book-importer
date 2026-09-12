@@ -30,6 +30,10 @@ class UrlPromptModal extends obsidian.Modal {
     onClose() { this.contentEl.empty(); }
 }
 class AuthorTodayImporter extends obsidian.Plugin {
+    constructor() {
+        super(...arguments);
+        this.settings = DEFAULT_SETTINGS;
+    }
     sanitizeFileName(name) {
         return name
             .replace(/[\\\/:*?"<>|]/g, '') // удалить недопустимые символы
