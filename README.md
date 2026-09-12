@@ -1,7 +1,3 @@
-# obsidian-author-today-book-importer
-
-An Obsidian plugin to import book metadata from Author.Today into Markdown note
-
 # Author.Today Book Importer
 
 **Import book metadata from Author.Today directly into Obsidian.**
@@ -21,6 +17,16 @@ This plugin:
 ---
 
 ## Installation
+
+### Option 1: install via BRAT
+
+1. Install the BRAT plugin in Obsidian.
+2. Open BRAT.
+3. Click **Add Beta plugin**.
+4. Paste the GitHub repository URL of this plugin.
+5. Install and enable it in Obsidian.
+
+### Option 2: manual install
 
 1. Clone this repo into your Vault’s `.obsidian/plugins/author-today-importer` folder  
 2. Build with `npm install && npm run build` to generate `main.js`  
