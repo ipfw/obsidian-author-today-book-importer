@@ -11,7 +11,7 @@ function normalizeSeries(value) {
         .replace(/[^\p{L}\p{N}\s\-\(\)]/gu, '')
         .trim();
 }
-function normalizeCategory(value) {
+function normalizeGenre(value) {
     return value.replace(/\s*\/\s*/g, ', ').replace(/[\r\n]+/g, ', ').trim();
 }
 function getImportDate() {
@@ -42,11 +42,11 @@ function parseAuthorTodayBook(doc, url) {
     if (dateEl) {
         published = ((_d = dateEl.getAttribute('data-time')) === null || _d === void 0 ? void 0 : _d.split('T')[0]) || '';
     }
-    let category = '';
+    let genre = '';
     const genreDiv = doc.querySelector('div.book-genres');
     if (genreDiv)
-        category = genreDiv.textContent.trim();
-    category = normalizeCategory(category);
+        genre = genreDiv.textContent.trim();
+    genre = normalizeGenre(genre);
     let series = '';
     let series_number = '';
     const cycleLabel = Array.from(doc.querySelectorAll('span.text-muted'))
@@ -84,7 +84,7 @@ function parseAuthorTodayBook(doc, url) {
         title,
         author,
         published,
-        category,
+        genre,
         series,
         series_number,
         pages,
@@ -137,14 +137,14 @@ function parseYandexBook(doc, url) {
     if (authorEl) {
         author = authorEl.textContent.trim();
     }
-    let category = '';
+    let genre = '';
     const topicsEl = doc.querySelector('[data-test-id="CONTENT_TOPICS"]');
     if (topicsEl) {
-        category = Array.from(topicsEl.querySelectorAll('a'))
+        genre = Array.from(topicsEl.querySelectorAll('a'))
             .map(el => el.textContent.trim())
             .join(', ');
     }
-    category = normalizeCategory(category);
+    genre = normalizeGenre(genre);
     let publisher = '';
     const pubEl = doc.querySelector('.ContentInfo_value__04NMq a');
     if (pubEl) {
@@ -182,7 +182,7 @@ function parseYandexBook(doc, url) {
         title,
         author,
         published: '',
-        category,
+        genre,
         series,
         series_number,
         pages,
@@ -197,9 +197,9 @@ function parseYandexBook(doc, url) {
 }
 
 const DEFAULT_SETTINGS = {
-    notesFolder: 'Books',
+    notesFolder: 'References/Books',
     templatePath: '',
-    coverFolder: 'images',
+    coverFolder: 'Attachments/images',
     authorTodayCookie: '',
     authorTodayUserAgent: 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 Safari/537.36'
 };
@@ -338,7 +338,9 @@ class AuthorTodayImporter extends obsidian.Plugin {
         }
     }
     async createBookNote(data) {
-        const fileName = this.sanitizeFileName(`${data.title} -- ${data.author}`);
+        const authors = data.author.split(/\s*(?:,|;|\band\b| и )\s*/i).filter(Boolean);
+        const firstAuthor = authors[0] || '';
+        const fileName = this.sanitizeFileName(`${data.title} -- ${firstAuthor}`);
         let cover = '';
         if (data.coverURL) {
             try {
@@ -358,44 +360,69 @@ class AuthorTodayImporter extends obsidian.Plugin {
             const tplFile = this.app.vault.getAbstractFileByPath(this.settings.templatePath);
             if (tplFile instanceof obsidian.TFile) {
                 let tpl = await this.app.vault.read(tplFile);
-                tpl = tpl
-                    .replace(/\{\{date\}\}/g, data.importDate)
-                    .replace(/\{\{title\}\}/g, data.title)
-                    .replace(/\{\{author\}\}/g, data.author)
-                    .replace(/\{\{published\}\}/g, data.published)
-                    .replace(/\{\{coverURL\}\}/g, data.coverURL)
-                    .replace(/\{\{cover\}\}/g, cover)
-                    .replace(/\{\{description\}\}/g, data.description)
-                    .replace(/\{\{category\}\}/g, data.category)
-                    .replace(/\{\{series\}\}/g, data.series)
-                    .replace(/\{\{series_number\}\}/g, data.series_number)
-                    .replace(/\{\{pages\}\}/g, data.pages)
-                    .replace(/\{\{status\}\}/g, data.status)
-                    .replace(/\{\{publisher\}\}/g, data.publisher)
-                    .replace(/\{\{source\}\}/g, data.source);
-                content = tpl;
+                const placeholders = {
+                    date: data.importDate,
+                    title: data.title,
+                    author: data.author,
+                    genre: data.genre,
+                    publisher: data.publisher,
+                    published: data.published,
+                    pages: data.pages,
+                    coverURL: data.coverURL,
+                    cover,
+                    status: data.status,
+                    series: data.series,
+                    series_number: data.series_number,
+                    source: data.source,
+                    description: data.description
+                };
+                tpl = tpl.replace(/\{\{(date|title|author|genre|publisher|published|pages|coverURL|cover|status|series|series_number|source|description)\}\}/g, (_, key) => { var _a; return (_a = placeholders[key]) !== null && _a !== void 0 ? _a : ''; });
+                content = tpl.replace(/\{\{[^}]+\}\}/g, '');
             }
             else {
                 new obsidian.Notice(`🔴 Template not found: ${this.settings.templatePath}`);
             }
         }
         if (!content) {
+            const yamlList = (values) => values.length
+                ? values.map(value => `  - "[[${value.trim()}]]"`).join('\n')
+                : '';
+            const genreValues = data.genre.split(',').map(value => value.trim()).filter(Boolean);
+            const seriesValue = data.series ? `"[[${data.series}]]"` : '';
+            const coverValue = cover ? `"[[${cover}]]"` : '';
             content = `---
+categories:
+  - "[[Books]]"
+type:
+  - "[[Book]]"
+
+created: ${data.importDate}
+updated:
 
 title: "${data.title}"
-author: "${data.author}"
-category: "${data.category}"
-published: "${data.published}"
-source: "${data.source}"
-coverURL: "${data.coverURL}"
-cover: "${cover}"
-series: "${data.series}"
-serieslink: "[[${data.series}]]"
-series_number: "${data.series_number}"
+
+author:
+${yamlList(authors)}
+
+genre:
+${yamlList(genreValues)}
+
 publisher: "${data.publisher}"
-pages: "${data.pages}"
-status: "${data.status}"
-date: "${data.importDate}"
+published: ${data.published}
+pages: ${data.pages}
+
+coverURL: "${data.coverURL}"
+cover: ${coverValue}
+
+status: "[[${data.status}]]"
+
+series: ${seriesValue}
+series_number: ${data.series_number}
+
+rating:
+last:
+
+source: "${data.source}"
 ---
 
 ${data.description}`;
@@ -427,7 +454,7 @@ class ImporterSettingTab extends obsidian.PluginSettingTab {
         new obsidian.Setting(containerEl)
             .setName('Notes Folder')
             .setDesc('Folder where imported book notes will be saved')
-            .addText(text => text.setPlaceholder('Books').setValue(this.plugin.settings.notesFolder)
+            .addText(text => text.setPlaceholder('References/Books').setValue(this.plugin.settings.notesFolder)
             .onChange(async (v) => {
             this.plugin.settings.notesFolder = v;
             await this.plugin.saveSettings();
@@ -443,7 +470,7 @@ class ImporterSettingTab extends obsidian.PluginSettingTab {
         new obsidian.Setting(containerEl)
             .setName('Cover Folder')
             .setDesc('Folder where cover images will be saved')
-            .addText(text => text.setPlaceholder('images').setValue(this.plugin.settings.coverFolder)
+            .addText(text => text.setPlaceholder('Attachments/images').setValue(this.plugin.settings.coverFolder)
             .onChange(async (v) => {
             this.plugin.settings.coverFolder = v;
             await this.plugin.saveSettings();

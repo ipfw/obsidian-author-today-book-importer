@@ -9,7 +9,7 @@ This plugin:
 - **Creates** a new note in a folder of your choice, with frontmatter fields and body templated by you.  
 - **Supports** Mustache-style placeholders:
   - `{{title}}`, `{{author}}`, `{{cover}}`, `{{description}}`, `{{source}}`  
-  - `{{date}}` (import date), `{{publishDate}}`, `{{category}}`, `{{series}}`, `{{series_number}}`, `{{pages}}`  
+  - `{{date}}` (import date), `{{published}}`, `{{genre}}`, `{{series}}`, `{{series_number}}`, `{{pages}}`
 - **Configurable** via plugin settings:
   - Vault folder for new notes  
   - Relative path to your custom note template  
@@ -41,8 +41,8 @@ This plugin:
 - `{{description}}` — the description from the meta tag
 - `{{source}}` — the original page URL
 - `{{date}}` — the import date (YYYY-MM-DD)
-- `{{publishDate}}` — the publication date (extracted from the `data-time` span)
-- `{{category}}` — the genres (text from `div.book-genres`)
+- `{{published}}` — the publication date (extracted from the `data-time` span)
+- `{{genre}}` — the genres (text from `div.book-genres`)
 - `{{series}}` — the series name (without brackets; wrap in `[[…]]` in your template)
 - `{{series_number}}` — the number in the series
 - `{{pages}}` — an estimated page count (character count ÷ 2000, rounded up)

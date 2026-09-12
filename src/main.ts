@@ -3,9 +3,9 @@ import { parseAuthorTodayBook, parseYandexBook } from './parsers';
 import { BookNoteInput, ImporterSettings } from './types';
 
 const DEFAULT_SETTINGS: ImporterSettings = {
-  notesFolder: 'Books',
+  notesFolder: 'References/Books',
   templatePath: '',
-  coverFolder: 'images',
+  coverFolder: 'Attachments/images',
   authorTodayCookie: '',
   authorTodayUserAgent: 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 Safari/537.36'
 };
@@ -153,7 +153,9 @@ export default class AuthorTodayImporter extends Plugin {
   }
 
   private async createBookNote(data: BookNoteInput) {
-    const fileName = this.sanitizeFileName(`${data.title} -- ${data.author}`);
+    const authors = data.author.split(/\s*(?:,|;|\band\b| и )\s*/i).filter(Boolean);
+    const firstAuthor = authors[0] || '';
+    const fileName = this.sanitizeFileName(`${data.title} -- ${firstAuthor}`);
 
     let cover = '';
     if (data.coverURL) {
@@ -175,48 +177,74 @@ export default class AuthorTodayImporter extends Plugin {
       const tplFile = this.app.vault.getAbstractFileByPath(this.settings.templatePath);
       if (tplFile instanceof TFile) {
         let tpl = await this.app.vault.read(tplFile);
-        tpl = tpl
-          .replace(/\{\{date\}\}/g, data.importDate)
-          .replace(/\{\{title\}\}/g, data.title)
-          .replace(/\{\{author\}\}/g, data.author)
-          .replace(/\{\{published\}\}/g, data.published)
-          .replace(/\{\{coverURL\}\}/g, data.coverURL)
-          .replace(/\{\{cover\}\}/g, cover)
-          .replace(/\{\{description\}\}/g, data.description)
-          .replace(/\{\{category\}\}/g, data.category)
-          .replace(/\{\{series\}\}/g, data.series)
-          .replace(/\{\{series_number\}\}/g, data.series_number)
-          .replace(/\{\{pages\}\}/g, data.pages)
-          .replace(/\{\{status\}\}/g, data.status)
-          .replace(/\{\{publisher\}\}/g, data.publisher)
-          .replace(/\{\{source\}\}/g, data.source);
-        content = tpl;
+        const placeholders: Record<string, string> = {
+          date: data.importDate,
+          title: data.title,
+          author: data.author,
+          genre: data.genre,
+          publisher: data.publisher,
+          published: data.published,
+          pages: data.pages,
+          coverURL: data.coverURL,
+          cover,
+          status: data.status,
+          series: data.series,
+          series_number: data.series_number,
+          source: data.source,
+          description: data.description
+        };
+        tpl = tpl.replace(/\{\{(date|title|author|genre|publisher|published|pages|coverURL|cover|status|series|series_number|source|description)\}\}/g,
+          (_, key: string) => placeholders[key] ?? '');
+        content = tpl.replace(/\{\{[^}]+\}\}/g, '');
       } else {
         new Notice(`🔴 Template not found: ${this.settings.templatePath}`);
       }
     }
 
     if (!content) {
+      const yamlList = (values: string[]): string => values.length
+        ? values.map(value => `  - "[[${value.trim()}]]"`).join('\n')
+        : '';
+      const genreValues = data.genre.split(',').map(value => value.trim()).filter(Boolean);
+      const seriesValue = data.series ? `"[[${data.series}]]"` : '';
+      const coverValue = cover ? `"[[${cover}]]"` : '';
       content = `---
+categories:
+  - "[[Books]]"
+type:
+  - "[[Book]]"
+
+created: ${data.importDate}
+updated:
 
 title: "${data.title}"
-author: "${data.author}"
-category: "${data.category}"
-published: "${data.published}"
-source: "${data.source}"
-coverURL: "${data.coverURL}"
-cover: "${cover}"
-series: "${data.series}"
-serieslink: "[[${data.series}]]"
-series_number: "${data.series_number}"
+
+author:
+${yamlList(authors)}
+
+genre:
+${yamlList(genreValues)}
+
 publisher: "${data.publisher}"
-pages: "${data.pages}"
-status: "${data.status}"
-date: "${data.importDate}"
+published: ${data.published}
+pages: ${data.pages}
+
+coverURL: "${data.coverURL}"
+cover: ${coverValue}
+
+status: "[[${data.status}]]"
+
+series: ${seriesValue}
+series_number: ${data.series_number}
+
+rating:
+last:
+
+source: "${data.source}"
 ---
 
 ${data.description}`;
-    }
+  }
 
     await this.app.vault.create(filePath, content);
     new Notice(
@@ -255,7 +283,7 @@ class ImporterSettingTab extends PluginSettingTab {
     new Setting(containerEl)
       .setName('Notes Folder')
       .setDesc('Folder where imported book notes will be saved')
-      .addText(text => text.setPlaceholder('Books').setValue(this.plugin.settings.notesFolder)
+      .addText(text => text.setPlaceholder('References/Books').setValue(this.plugin.settings.notesFolder)
         .onChange(async v => {
           this.plugin.settings.notesFolder = v;
           await this.plugin.saveSettings();
@@ -273,7 +301,7 @@ class ImporterSettingTab extends PluginSettingTab {
     new Setting(containerEl)
       .setName('Cover Folder')
       .setDesc('Folder where cover images will be saved')
-      .addText(text => text.setPlaceholder('images').setValue(this.plugin.settings.coverFolder)
+      .addText(text => text.setPlaceholder('Attachments/images').setValue(this.plugin.settings.coverFolder)
         .onChange(async v => {
           this.plugin.settings.coverFolder = v;
           await this.plugin.saveSettings();

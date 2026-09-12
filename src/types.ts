@@ -11,7 +11,7 @@ export interface BookNoteInput {
   title: string;
   author: string;
   published: string;
-  category: string;
+  genre: string;
   series: string;
   series_number: string;
   pages: string;

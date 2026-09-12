@@ -11,7 +11,7 @@ export function normalizeSeries(value: string): string {
     .trim();
 }
 
-export function normalizeCategory(value: string): string {
+export function normalizeGenre(value: string): string {
   return value.replace(/\s*\/\s*/g, ', ').replace(/[\r\n]+/g, ', ').trim();
 }
 
@@ -46,10 +46,10 @@ export function parseAuthorTodayBook(doc: Document, url: string): BookNoteInput 
     published = dateEl.getAttribute('data-time')?.split('T')[0] || '';
   }
 
-  let category = '';
+  let genre = '';
   const genreDiv = doc.querySelector('div.book-genres');
-  if (genreDiv) category = genreDiv.textContent.trim();
-  category = normalizeCategory(category);
+  if (genreDiv) genre = genreDiv.textContent.trim();
+  genre = normalizeGenre(genre);
 
   let series = '';
   let series_number = '';
@@ -91,7 +91,7 @@ export function parseAuthorTodayBook(doc: Document, url: string): BookNoteInput 
     title,
     author,
     published,
-    category,
+    genre,
     series,
     series_number,
     pages,
@@ -147,14 +147,14 @@ export function parseYandexBook(doc: Document, url: string): BookNoteInput {
     author = authorEl.textContent.trim();
   }
 
-  let category = '';
+  let genre = '';
   const topicsEl = doc.querySelector('[data-test-id="CONTENT_TOPICS"]');
   if (topicsEl) {
-    category = Array.from(topicsEl.querySelectorAll('a'))
+    genre = Array.from(topicsEl.querySelectorAll('a'))
       .map(el => el.textContent.trim())
       .join(', ');
   }
-  category = normalizeCategory(category);
+  genre = normalizeGenre(genre);
 
   let publisher = '';
   const pubEl = doc.querySelector('.ContentInfo_value__04NMq a');
@@ -198,7 +198,7 @@ export function parseYandexBook(doc: Document, url: string): BookNoteInput {
     title,
     author,
     published: '',
-    category,
+    genre,
     series,
     series_number,
     pages,
