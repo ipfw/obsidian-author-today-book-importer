@@ -180,8 +180,6 @@ export default class AuthorTodayImporter extends Plugin {
     const coverLink = cover ? `"[[${cover}]]"` : '';
     const statusLink = data.status ? `"[[${data.status}]]"` : '';
     const seriesLink = data.series ? `"[[${data.series}]]"` : '';
-    const categoriesYaml = '  - "[[Books]]"';
-    const typeYaml = '  - "[[Book]]"';
     let content = '';
 
     if (this.settings.templatePath) {
@@ -190,13 +188,9 @@ export default class AuthorTodayImporter extends Plugin {
         let tpl = await this.app.vault.read(tplFile);
         const placeholders: Record<string, string> = {
           date: data.importDate,
-          created: data.importDate,
-          updated: '',
           title: data.title,
           author: data.author,
           genre: data.genre,
-          categories_yaml: categoriesYaml,
-          type_yaml: typeYaml,
           authors_yaml: authorsYaml,
           genres_yaml: genresYaml,
           publisher: data.publisher,
@@ -213,7 +207,7 @@ export default class AuthorTodayImporter extends Plugin {
           source: data.source,
           description: data.description
         };
-        tpl = tpl.replace(/\{\{(date|created|updated|title|author|genre|categories_yaml|type_yaml|authors_yaml|genres_yaml|publisher|published|pages|coverURL|cover|cover_link|status|status_link|series|series_link|series_number|source|description)\}\}/g,
+        tpl = tpl.replace(/\{\{(date|title|author|genre|authors_yaml|genres_yaml|publisher|published|pages|coverURL|cover|cover_link|status|status_link|series|series_link|series_number|source|description)\}\}/g,
           (_, key: string) => placeholders[key] ?? '');
         content = tpl.replace(/\{\{[^}]+\}\}/g, '');
       } else {
