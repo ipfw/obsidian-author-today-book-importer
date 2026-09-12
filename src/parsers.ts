@@ -22,8 +22,9 @@ export function getImportDate(): string {
 export function parseAuthorTodayBook(doc: Document, url: string): BookNoteInput {
   const importDate = getImportDate();
 
-  let title = doc.querySelector('h1.book-title[itemprop="name"]')?.textContent?.trim() ||
-    doc.querySelector('h1.work-page__title')?.textContent?.trim() || '';
+  const titleEl = doc.querySelector('h1.book-title[itemprop="name"]');
+  const fallbackTitleEl = doc.querySelector('h1.work-page__title');
+  let title = titleEl?.textContent?.trim() || fallbackTitleEl?.textContent?.trim() || '';
 
   let author = '';
   const metaAuthor = doc.querySelector('meta[itemprop="name"]');
@@ -39,7 +40,8 @@ export function parseAuthorTodayBook(doc: Document, url: string): BookNoteInput 
   title = normalizeTitle(title);
 
   let published = '';
-  const dateEl = Array.from(doc.querySelectorAll('span.hint-top')).find(el => el.getAttribute('data-time'));
+  const dateEl = Array.from(doc.querySelectorAll('span.hint-top'))
+    .find(el => el.getAttribute('data-time'));
   if (dateEl) {
     published = dateEl.getAttribute('data-time')?.split('T')[0] || '';
   }
@@ -78,9 +80,11 @@ export function parseAuthorTodayBook(doc: Document, url: string): BookNoteInput 
   const status = 'отложено';
   const publisher = 'АТ';
   const coverMeta = doc.querySelector('meta[property="og:image"]');
-  const coverURL = coverMeta?.getAttribute('content') ||
-    doc.querySelector('img.work-cover__image')?.getAttribute('src') || '';
-  const description = doc.querySelector('meta[property="og:description"]')?.getAttribute('content') || '';
+  const coverURL = coverMeta?.getAttribute('content')
+    || doc.querySelector('img.work-cover__image')?.getAttribute('src')
+    || '';
+  const description = doc.querySelector('meta[property="og:description"]')
+    ?.getAttribute('content') || '';
 
   return {
     url,
@@ -124,7 +128,8 @@ export function parseYandexBook(doc: Document, url: string): BookNoteInput {
 
   let series = '';
   let series_number = '';
-  const seriesEl = Array.from(doc.querySelectorAll('li')).find(el => el.textContent.includes('Серия:'));
+  const seriesEl = Array.from(doc.querySelectorAll('li'))
+    .find(el => el.textContent.includes('Серия:'));
   if (seriesEl) {
     const seriesText = seriesEl.textContent.replace('Серия:', '').trim();
     const seriesNumMatch = seriesText.match(/(.+?)\s*#(\d+)/);
@@ -173,7 +178,8 @@ export function parseYandexBook(doc: Document, url: string): BookNoteInput {
   const status = 'отложено';
 
   let coverURL = '';
-  const coverEl = doc.querySelector('img.book-cover__image') ?? doc.querySelector('img[src*="assets/books-covers/"]');
+  const coverEl = doc.querySelector('img.book-cover__image')
+    ?? doc.querySelector('img[src*="assets/books-covers/"]');
   if (coverEl) {
     coverURL = coverEl.getAttribute('src') || '';
     if (coverURL && coverURL.startsWith('//')) {

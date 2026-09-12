@@ -18,14 +18,15 @@ function getImportDate() {
     return new Date().toISOString().split('T')[0];
 }
 function parseAuthorTodayBook(doc, url) {
-    var _a, _b, _c, _d, _e, _f, _g, _h, _j, _k;
+    var _a, _b, _c, _d, _e, _f, _g, _h;
     const importDate = getImportDate();
-    let title = ((_b = (_a = doc.querySelector('h1.book-title[itemprop="name"]')) === null || _a === void 0 ? void 0 : _a.textContent) === null || _b === void 0 ? void 0 : _b.trim()) ||
-        ((_d = (_c = doc.querySelector('h1.work-page__title')) === null || _c === void 0 ? void 0 : _c.textContent) === null || _d === void 0 ? void 0 : _d.trim()) || '';
+    const titleEl = doc.querySelector('h1.book-title[itemprop="name"]');
+    const fallbackTitleEl = doc.querySelector('h1.work-page__title');
+    let title = ((_a = titleEl === null || titleEl === void 0 ? void 0 : titleEl.textContent) === null || _a === void 0 ? void 0 : _a.trim()) || ((_b = fallbackTitleEl === null || fallbackTitleEl === void 0 ? void 0 : fallbackTitleEl.textContent) === null || _b === void 0 ? void 0 : _b.trim()) || '';
     let author = '';
     const metaAuthor = doc.querySelector('meta[itemprop="name"]');
     if (metaAuthor) {
-        author = ((_e = metaAuthor.getAttribute('content')) === null || _e === void 0 ? void 0 : _e.trim()) || '';
+        author = ((_c = metaAuthor.getAttribute('content')) === null || _c === void 0 ? void 0 : _c.trim()) || '';
     }
     else {
         const authorEl = doc.querySelector('.work-page__author a');
@@ -36,9 +37,10 @@ function parseAuthorTodayBook(doc, url) {
     author = normalizeTitle(author);
     title = normalizeTitle(title);
     let published = '';
-    const dateEl = Array.from(doc.querySelectorAll('span.hint-top')).find(el => el.getAttribute('data-time'));
+    const dateEl = Array.from(doc.querySelectorAll('span.hint-top'))
+        .find(el => el.getAttribute('data-time'));
     if (dateEl) {
-        published = ((_f = dateEl.getAttribute('data-time')) === null || _f === void 0 ? void 0 : _f.split('T')[0]) || '';
+        published = ((_d = dateEl.getAttribute('data-time')) === null || _d === void 0 ? void 0 : _d.split('T')[0]) || '';
     }
     let category = '';
     const genreDiv = doc.querySelector('div.book-genres');
@@ -54,7 +56,7 @@ function parseAuthorTodayBook(doc, url) {
         const linkEl = container === null || container === void 0 ? void 0 : container.querySelector('a');
         if (linkEl) {
             series = linkEl.textContent.trim().replace(/['"]/g, '');
-            let numMatch = (_h = (_g = linkEl.nextElementSibling) === null || _g === void 0 ? void 0 : _g.textContent) === null || _h === void 0 ? void 0 : _h.match(/#\s*(\d+)/);
+            let numMatch = (_f = (_e = linkEl.nextElementSibling) === null || _e === void 0 ? void 0 : _e.textContent) === null || _f === void 0 ? void 0 : _f.match(/#\s*(\d+)/);
             if (!numMatch && (container === null || container === void 0 ? void 0 : container.textContent)) {
                 numMatch = container.textContent.match(/#\s*(\d+)/);
             }
@@ -73,9 +75,10 @@ function parseAuthorTodayBook(doc, url) {
     const status = 'отложено';
     const publisher = 'АТ';
     const coverMeta = doc.querySelector('meta[property="og:image"]');
-    const coverURL = (coverMeta === null || coverMeta === void 0 ? void 0 : coverMeta.getAttribute('content')) ||
-        ((_j = doc.querySelector('img.work-cover__image')) === null || _j === void 0 ? void 0 : _j.getAttribute('src')) || '';
-    const description = ((_k = doc.querySelector('meta[property="og:description"]')) === null || _k === void 0 ? void 0 : _k.getAttribute('content')) || '';
+    const coverURL = (coverMeta === null || coverMeta === void 0 ? void 0 : coverMeta.getAttribute('content'))
+        || ((_g = doc.querySelector('img.work-cover__image')) === null || _g === void 0 ? void 0 : _g.getAttribute('src'))
+        || '';
+    const description = ((_h = doc.querySelector('meta[property="og:description"]')) === null || _h === void 0 ? void 0 : _h.getAttribute('content')) || '';
     return {
         url,
         title,
@@ -116,7 +119,8 @@ function parseYandexBook(doc, url) {
     }
     let series = '';
     let series_number = '';
-    const seriesEl = Array.from(doc.querySelectorAll('li')).find(el => el.textContent.includes('Серия:'));
+    const seriesEl = Array.from(doc.querySelectorAll('li'))
+        .find(el => el.textContent.includes('Серия:'));
     if (seriesEl) {
         const seriesText = seriesEl.textContent.replace('Серия:', '').trim();
         const seriesNumMatch = seriesText.match(/(.+?)\s*#(\d+)/);
