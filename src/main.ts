@@ -171,6 +171,15 @@ export default class AuthorTodayImporter extends Plugin {
     }
 
     const filePath = await this.getUniquePath(`${this.settings.notesFolder}/${fileName}`, 'md');
+    const yamlList = (values: string[]): string => values.length
+      ? values.map(value => `  - "[[${value.trim()}]]"`).join('\n')
+      : '';
+    const genreValues = data.genre.split(',').map(value => value.trim()).filter(Boolean);
+    const authorsYaml = yamlList(authors);
+    const genresYaml = yamlList(genreValues);
+    const coverLink = cover ? `"[[${cover}]]"` : '';
+    const statusLink = data.status ? `"[[${data.status}]]"` : '';
+    const seriesLink = data.series ? `"[[${data.series}]]"` : '';
     let content = '';
 
     if (this.settings.templatePath) {
@@ -182,18 +191,23 @@ export default class AuthorTodayImporter extends Plugin {
           title: data.title,
           author: data.author,
           genre: data.genre,
+          authors_yaml: authorsYaml,
+          genres_yaml: genresYaml,
           publisher: data.publisher,
           published: data.published,
           pages: data.pages,
           coverURL: data.coverURL,
           cover,
+          cover_link: coverLink,
           status: data.status,
+          status_link: statusLink,
           series: data.series,
+          series_link: seriesLink,
           series_number: data.series_number,
           source: data.source,
           description: data.description
         };
-        tpl = tpl.replace(/\{\{(date|title|author|genre|publisher|published|pages|coverURL|cover|status|series|series_number|source|description)\}\}/g,
+        tpl = tpl.replace(/\{\{(date|title|author|genre|authors_yaml|genres_yaml|publisher|published|pages|coverURL|cover|cover_link|status|status_link|series|series_link|series_number|source|description)\}\}/g,
           (_, key: string) => placeholders[key] ?? '');
         content = tpl.replace(/\{\{[^}]+\}\}/g, '');
       } else {
@@ -202,12 +216,6 @@ export default class AuthorTodayImporter extends Plugin {
     }
 
     if (!content) {
-      const yamlList = (values: string[]): string => values.length
-        ? values.map(value => `  - "[[${value.trim()}]]"`).join('\n')
-        : '';
-      const genreValues = data.genre.split(',').map(value => value.trim()).filter(Boolean);
-      const seriesValue = data.series ? `"[[${data.series}]]"` : '';
-      const coverValue = cover ? `"[[${cover}]]"` : '';
       content = `---
 categories:
   - "[[Books]]"
@@ -220,21 +228,21 @@ updated:
 title: "${data.title}"
 
 author:
-${yamlList(authors)}
+${authorsYaml}
 
 genre:
-${yamlList(genreValues)}
+${genresYaml}
 
 publisher: "${data.publisher}"
 published: ${data.published}
 pages: ${data.pages}
 
 coverURL: "${data.coverURL}"
-cover: ${coverValue}
+cover: ${coverLink}
 
-status: "[[${data.status}]]"
+status: ${statusLink}
 
-series: ${seriesValue}
+series: ${seriesLink}
 series_number: ${data.series_number}
 
 rating:
