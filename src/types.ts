@@ -22,4 +22,5 @@ export interface BookNoteInput {
   importDate: string;
   source: string;
   isYandex: boolean;
+  isLitres?: boolean;
 }

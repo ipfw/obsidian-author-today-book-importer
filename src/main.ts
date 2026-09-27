@@ -1,5 +1,5 @@
 import { App, Plugin, PluginSettingTab, Setting, Notice, Modal, TFile, requestUrl } from 'obsidian';
-import { parseAuthorTodayBook, parseYandexBook } from './parsers';
+import { parseAuthorTodayBook, parseLitresBook, parseYandexBook } from './parsers';
 import { BookNoteInput, ImporterSettings } from './types';
 
 const DEFAULT_SETTINGS: ImporterSettings = {
@@ -9,6 +9,28 @@ const DEFAULT_SETTINGS: ImporterSettings = {
   authorTodayCookie: '',
   authorTodayUserAgent: 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 Safari/537.36'
 };
+
+function getUrlHost(value: string): string {
+  try {
+    return new URL(value).hostname.toLowerCase();
+  } catch {
+    return '';
+  }
+}
+
+function isHost(host: string, domain: string): boolean {
+  return host === domain || host.endsWith(`.${domain}`);
+}
+
+function getCoverExtension(url: string): string {
+  try {
+    const match = new URL(url).pathname.match(/\.(jpe?g|png|webp|gif)$/i);
+    if (!match) return 'jpg';
+    return match[1].toLowerCase() === 'jpeg' ? 'jpg' : match[1].toLowerCase();
+  } catch {
+    return 'jpg';
+  }
+}
 
 class UrlPromptModal extends Modal {
   private promptResult: (value: string) => void;
@@ -20,7 +42,7 @@ class UrlPromptModal extends Modal {
 
   onOpen() {
     const { contentEl } = this;
-    contentEl.createEl('h2', { text: 'Введите URL книги (author.today или Яндекс.книги):' });
+    contentEl.createEl('h2', { text: 'Введите URL книги (Author.Today, Яндекс Книги или LitRes):' });
     const input = contentEl.createEl('input', { type: 'text' });
     input.style.width = '100%';
     const submit = contentEl.createEl('button', { text: 'Добавить' });
@@ -99,10 +121,13 @@ export default class AuthorTodayImporter extends Plugin {
         return;
       }
 
-      if (url.includes('author.today')) {
+      const host = getUrlHost(url);
+      if (isHost(host, 'author.today')) {
         this.importBook(url);
-      } else if (url.includes('books.yandex.ru')) {
+      } else if (isHost(host, 'books.yandex.ru')) {
         this.importYandexBook(url);
+      } else if (isHost(host, 'litres.ru') || isHost(host, 'litres.com')) {
+        this.importLitresBook(url);
       } else {
         new Notice('Неизвестный ресурс');
       }
@@ -152,6 +177,25 @@ export default class AuthorTodayImporter extends Plugin {
     }
   }
 
+  async importLitresBook(url: string) {
+    try {
+      const headers: Record<string, string> = {
+        'User-Agent': this.settings.authorTodayUserAgent || 'Mozilla/5.0',
+        'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+        'Accept-Language': 'ru-RU,ru;q=0.9,en;q=0.8'
+      };
+      const doc = await this.fetchDocument(url, headers);
+      const bookData = parseLitresBook(doc, url);
+      await this.createBookNote(bookData);
+    } catch (e) {
+      const anyErr = e as any;
+      const status = anyErr?.status ?? anyErr?.response?.status;
+      const msg = anyErr?.message ? String(anyErr.message) : String(e);
+      console.error('LitRes import error', { status, msg, e });
+      new Notice(`Не удалось импортировать книгу с LitRes${status ? ` (status ${status})` : ''}`);
+    }
+  }
+
   private async createBookNote(data: BookNoteInput) {
     const authors = data.author.split(/\s*(?:,|;|\band\b| и )\s*/i).filter(Boolean);
     const firstAuthor = authors[0] || '';
@@ -160,7 +204,10 @@ export default class AuthorTodayImporter extends Plugin {
     let cover = '';
     if (data.coverURL) {
       try {
-        const imagePath = await this.getUniquePath(`${this.settings.coverFolder}/${fileName}`, 'jpg');
+        const imagePath = await this.getUniquePath(
+          `${this.settings.coverFolder}/${fileName}`,
+          getCoverExtension(data.coverURL)
+        );
         const imgResult = await requestUrl({ url: data.coverURL, method: 'GET' });
         const buffer: ArrayBuffer = imgResult.arrayBuffer;
         await this.app.vault.createBinary(imagePath, buffer);
@@ -258,6 +305,8 @@ ${data.description}`;
     new Notice(
       data.isYandex
         ? `Imported "${data.title}" from Yandex.Books`
+        : data.isLitres
+          ? `Imported "${data.title}" from LitRes`
         : `Imported "${data.title}"`
     );
 
