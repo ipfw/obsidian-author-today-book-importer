@@ -1,10 +1,11 @@
-# Author.Today Book Importer
+# Book Importer for Obsidian
 
-**Import book metadata from Author.Today directly into Obsidian.**
+**Import book metadata from Author.Today, Yandex Books, and LitRes directly into Obsidian.**
 
 This plugin:
 
-- **Fetches** title, author, cover image, description, publication date, genres, series name & number, and estimated page count from a given Author.Today URL.  
+- **Fetches** title, all authors, cover image, description, publication date, genres, publisher, series name & number, and page count.
+- **Supports** Author.Today, Yandex Books, LitRes.ru, and LitRes.com URLs.
 - **Bypasses CORS** using Obsidian’s built-in `requestUrl` API.  
 - **Creates** a new note in a folder of your choice, with frontmatter fields and body templated by you.  
 - **Supports** Mustache-style placeholders:
@@ -31,7 +32,7 @@ This plugin:
 1. Clone this repo into your Vault’s `.obsidian/plugins/author-today-importer` folder  
 2. Build with `npm install && npm run build` to generate `main.js`  
 3. Enable the plugin in Obsidian’s **Community Plugins** settings  
-4. Run **“Import Book from Author.Today”** from the command palette and enter a URL
+4. Run **“Import Book (Auto)”** from the command palette and enter a supported book URL
 
 ## The plugin provides the following placeholders for your template
 
@@ -46,3 +47,7 @@ This plugin:
 - `{{series}}` — the series name (without brackets; wrap in `[[…]]` in your template)
 - `{{series_number}}` — the number in the series
 - `{{pages}}` — an estimated page count (character count ÷ 2000, rounded up)
+- `{{publisher}}` — publisher from the book page; falls back to `АТ`, `Яндекс`, or `Литрес`
+- `{{authors_yaml}}` — authors as separate Obsidian links in a YAML list
+- `{{genres_yaml}}` — genres as separate Obsidian links in a YAML list
+- `{{cover_link}}`, `{{status_link}}`, `{{series_link}}` — ready-to-use Obsidian links

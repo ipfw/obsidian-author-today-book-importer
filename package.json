@@ -1,6 +1,6 @@
 {
   "name": "obsidian-author-today-importer",
-  "version": "0.1.4",
+  "version": "0.1.9",
   "main": "main.js",
   "type": "module",
   "scripts": {

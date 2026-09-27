@@ -1,9 +1,9 @@
 {
   "id": "obsidian-author-today-importer",
-  "name": "Author.Today and Yandex Book Importer",
-  "version": "0.1.6",
+  "name": "Book Importer (Author.Today, Yandex, LitRes)",
+  "version": "0.1.9",
   "minAppVersion": "0.12.0",
-  "description": "Import book details from author.today into Obsidian notes",
+  "description": "Import book details from Author.Today, Yandex Books, and LitRes into Obsidian notes",
   "author": "@ipfw999",
   "authorUrl": "",
   "isDesktopOnly": false,
